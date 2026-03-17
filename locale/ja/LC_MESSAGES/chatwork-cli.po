@@ -1,0 +1,67 @@
+msgid ""
+msgstr ""
+"Language: ja\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "No templates are registered."
+msgstr "テンプレートは登録されていません。"
+
+msgid "Set the `{token_env}` environment variable."
+msgstr "環境変数 `{token_env}` を設定してください。"
+
+msgid "Sent the message. room_id={room_id} message_id={message_id}"
+msgstr "送信しました。room_id={room_id} message_id={message_id}"
+
+msgid "Template `{name}` was not found."
+msgstr "テンプレート `{name}` が見つかりません。"
+
+msgid "Template `{name}` must specify exactly one of body or body_file."
+msgstr "テンプレート `{name}` では body または body_file のいずれか一方のみを指定してください。"
+
+msgid "Specify one of --room, template room_id, or default_room_id."
+msgstr "--room、テンプレートの room_id、default_room_id のいずれかを指定してください。"
+
+msgid "`{item}` must use KEY=VALUE format."
+msgstr "`{item}` は KEY=VALUE 形式で指定してください。"
+
+msgid "Variable names cannot be empty: `{item}`"
+msgstr "変数名は空にできません: `{item}`"
+
+msgid "Missing closing `}}` for template placeholder."
+msgstr "テンプレートの `{{` に対応する `}}` がありません。"
+
+msgid "Empty placeholder names are not allowed."
+msgstr "空の変数名は使用できません。"
+
+msgid "Variable `{key}` is not set."
+msgstr "変数 `{key}` が指定されていません。"
+
+msgid "HOME is unavailable. Specify `--config`."
+msgstr "HOME を取得できないため、`--config` を指定してください。"
+
+msgid "Failed to read config file: {path}"
+msgstr "設定ファイルを読み込めませんでした: {path}"
+
+msgid "Failed to parse TOML config: {path}"
+msgstr "設定ファイルの TOML を解析できませんでした: {path}"
+
+msgid "Failed to read template body file: {path}"
+msgstr "テンプレート本文ファイルを読み込めませんでした: {path}"
+
+msgid "At least one template must be defined."
+msgstr "テンプレートが 1 件も定義されていません。"
+
+msgid "Failed to send request to Chatwork API."
+msgstr "Chatwork API へのリクエストに失敗しました。"
+
+msgid "Failed to read response body from Chatwork API."
+msgstr "Chatwork API のレスポンスを読み取れませんでした。"
+
+msgid "Chatwork API returned an error: status={status} body={body}"
+msgstr "Chatwork API がエラーを返しました: status={status} body={body}"
+
+msgid "The response does not contain message_id."
+msgstr "レスポンスに message_id が含まれていません。"
+
+msgid "Failed to parse message_id from the response."
+msgstr "レスポンスの message_id を最後まで読み取れませんでした。"

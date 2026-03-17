@@ -1,0 +1,23 @@
+default_room_id = "123456789"
+templates_prefix = "./templates"
+
+[templates.follow_up]
+description = "確認依頼のフォロー"
+body_file = "follow_up.txt"
+
+[templates.thanks]
+description = "お礼"
+body = """
+[To:{{to_id}}][pname:{{to_id}}]さん
+対応ありがとう！
+助かったよ。
+"""
+
+[templates.reminder]
+description = "リマインド"
+room_id = "987654321"
+body = """
+[info][title]リマインド[/title]
+{{message}}
+[/info]
+"""

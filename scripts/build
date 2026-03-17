@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+mode="debug"
+cargo_args=(build --bin chatwork)
+
+if [[ "${1:-}" == "--release" ]]; then
+  mode="release"
+  cargo_args+=(--release)
+  shift
+fi
+
+if [[ "$#" -gt 0 ]]; then
+  cargo_args+=("$@")
+fi
+
+cargo "${cargo_args[@]}"
+
+src="target/${mode}/chatwork"
+dst="bin/chatwork"
+
+cp "$src" "$dst"
+chmod +x "$dst"
+
+printf 'built %s from %s\n' "$dst" "$src"

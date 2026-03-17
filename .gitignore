@@ -1,0 +1,5 @@
+/target
+/bin/chatwork
+.env
+/config/*.toml
+!/config/*.example.toml
