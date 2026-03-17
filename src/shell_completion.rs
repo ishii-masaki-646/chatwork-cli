@@ -119,6 +119,11 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "template" && "${template_subcmd}" == "list" ]]; then
+        COMPREPLY=( $(compgen -W "--config --help" -- "${cur}") )
+        return 0
+    fi
+
     if [[ "${mode}" == "template" && -z "${template_subcmd}" ]]; then
         COMPREPLY=( $(compgen -W "list show --config --help" -- "${cur}") )
         return 0
@@ -137,6 +142,46 @@ complete -F _chatwork chatwork
 "#;
 
 const ZSH_SCRIPT: &str = r#"#compdef chatwork
+
+_chatwork_add_described() {
+    local -a matches display_strings
+    local spec match description
+
+    for spec in "$@"; do
+        match="${spec%%$'\t'*}"
+        description="${spec#*$'\t'}"
+        matches+=("${match}")
+        if [[ "${description}" == "${spec}" || -z "${description}" ]]; then
+            display_strings+=("${match}")
+        else
+            display_strings+=("${match} -- ${description}")
+        fi
+    done
+
+    (( ${#matches[@]} > 0 )) && compadd -l -o match -d display_strings -- "${matches[@]}"
+}
+
+_chatwork_add_described_group() {
+    local group_name="$1"
+    local header="$2"
+    shift 2
+
+    local -a matches display_strings
+    local spec match description
+
+    for spec in "$@"; do
+        match="${spec%%$'\t'*}"
+        description="${spec#*$'\t'}"
+        matches+=("${match}")
+        if [[ "${description}" == "${spec}" || -z "${description}" ]]; then
+            display_strings+=("${match}")
+        else
+            display_strings+=("${match} -- ${description}")
+        fi
+    done
+
+    (( ${#matches[@]} > 0 )) && compadd -V "${group_name}" -X "${header}" -l -o match -d display_strings -- "${matches[@]}"
+}
 
 _chatwork() {
     local cur prev
@@ -212,86 +257,101 @@ _chatwork() {
     esac
 
     if [[ "${mode}" == "send" ]]; then
-        local -a opts templates descriptions display_strings lines cmd
-        opts=(--room --var --self-unread --dry-run --config --help)
+        local -a opts templates lines cmd template_specs
+        opts=(
+            $'--room\t送信先ルーム ID を指定する'
+            $'--var\t差し込み変数を指定する'
+            $'--self-unread\t自分を未読にする'
+            $'--dry-run\t送信せず本文のみ表示する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
         if [[ ${positional_seen} -eq 0 && "${cur}" != -* ]]; then
             cmd=(chatwork)
             if [[ -n "${config}" ]]; then
                 cmd+=(--config "${config}")
             fi
             lines=("${(@f)$("${cmd[@]}" __complete_templates --describe --current "${cur}" 2>/dev/null)}")
-            templates=()
-            descriptions=()
-            display_strings=()
-            local line name description
-            for line in "${lines[@]}"; do
-                name="${line%%$'\t'*}"
-                description="${line#*$'\t'}"
-                templates+=("${name}")
-                descriptions+=("${description}")
-                if [[ -n "${description}" ]]; then
-                    display_strings+=("${name} -- ${description}")
-                else
-                    display_strings+=("${name}")
-                fi
-            done
-            (( ${#templates[@]} > 0 )) && compadd -l -o match -d display_strings -- "${templates[@]}"
-            compadd -- "${opts[@]}"
+            template_specs=("${lines[@]}")
+            _chatwork_add_described_group 'chatwork-templates' $'\t-*- テンプレート -*-' "${template_specs[@]}"
+            _chatwork_add_described_group 'chatwork-options' $'\t-*- オプション -*-' "${opts[@]}"
             return 0
         fi
-        compadd -- "${opts[@]}"
+        _chatwork_add_described "${opts[@]}"
         return 0
     fi
 
     if [[ "${mode}" == "template" && "${template_subcmd}" == "show" ]]; then
-        local -a opts templates descriptions display_strings lines cmd
-        opts=(--var --config --help)
+        local -a opts lines cmd template_specs
+        opts=(
+            $'--var\t差し込み変数を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
         if [[ ${positional_seen} -eq 0 && "${cur}" != -* ]]; then
             cmd=(chatwork)
             if [[ -n "${config}" ]]; then
                 cmd+=(--config "${config}")
             fi
             lines=("${(@f)$("${cmd[@]}" __complete_templates --describe --current "${cur}" 2>/dev/null)}")
-            templates=()
-            descriptions=()
-            display_strings=()
-            local line name description
-            for line in "${lines[@]}"; do
-                name="${line%%$'\t'*}"
-                description="${line#*$'\t'}"
-                templates+=("${name}")
-                descriptions+=("${description}")
-                if [[ -n "${description}" ]]; then
-                    display_strings+=("${name} -- ${description}")
-                else
-                    display_strings+=("${name}")
-                fi
-            done
-            (( ${#templates[@]} > 0 )) && compadd -l -o match -d display_strings -- "${templates[@]}"
-            compadd -- "${opts[@]}"
+            template_specs=("${lines[@]}")
+            _chatwork_add_described_group 'chatwork-templates' $'\t-*- テンプレート -*-' "${template_specs[@]}"
+            _chatwork_add_described_group 'chatwork-options' $'\t-*- オプション -*-' "${opts[@]}"
             return 0
         fi
-        compadd -- "${opts[@]}"
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "template" && "${template_subcmd}" == "list" ]]; then
+        local -a opts
+        opts=(
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
         return 0
     fi
 
     if [[ "${mode}" == "template" && -z "${template_subcmd}" ]]; then
         local -a opts
-        opts=(list show --config --help)
-        compadd -- "${opts[@]}"
+        opts=(
+            $'list\tテンプレート一覧を表示する'
+            $'show\tテンプレート本文を表示する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
         return 0
     fi
 
     if [[ "${mode}" == "completion" ]]; then
         local -a opts
-        opts=(bash zsh fish elvish power-shell --config --help)
-        compadd -- "${opts[@]}"
+        opts=(
+            $'bash\tbash 用の補完スクリプトを生成する'
+            $'zsh\tzsh 用の補完スクリプトを生成する'
+            $'fish\tfish 用の補完スクリプトを生成する'
+            $'elvish\telvish 用の補完スクリプトを生成する'
+            $'power-shell\tPowerShell 用の補完スクリプトを生成する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
         return 0
     fi
 
     local -a opts
-    opts=(template send completion --config --help --version -h -V)
-    compadd -- "${opts[@]}"
+    opts=(
+        $'template\tテンプレートを扱う'
+        $'send\tテンプレートを送信する'
+        $'completion\tシェル補完スクリプトを出力する'
+        $'--config\t設定ファイルのパスを指定する'
+        $'--help\tヘルプを表示する'
+        $'--version\tバージョンを表示する'
+        $'-h\tヘルプを表示する'
+        $'-V\tバージョンを表示する'
+    )
+    _chatwork_add_described "${opts[@]}"
     return 0
 }
 
