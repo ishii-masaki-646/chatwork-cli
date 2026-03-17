@@ -13,7 +13,11 @@
 - Rust / Cargo
 - Chatwork API トークン
 
-`CHATWORK_API_TOKEN` は通常の環境変数を優先し、未設定の場合のみ `.env` から補完します。
+`CHATWORK_API_TOKEN` は次の優先順位で解決します。
+
+1. 通常の環境変数
+2. カレントディレクトリから親ディレクトリへ向かって探索した `.env`
+3. `~/.config/chatwork-cli/.env`
 
 ```bash
 export CHATWORK_API_TOKEN=your_token
@@ -25,7 +29,7 @@ export CHATWORK_API_TOKEN=your_token
 CHATWORK_API_TOKEN=your_token
 ```
 
-初期設定時は `.env.example` をコピーして `.env` を作成してください。
+初期設定時は `.env.example` をコピーして `.env` を作成してください。`~/.config/chatwork-cli/.env` に配置して共通設定として使うこともできます。
 
 ```bash
 cp .env.example .env

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
-use dotenvy::dotenv;
+use dotenvy::{dotenv, from_path};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -154,7 +154,7 @@ impl CompletionShell {
 }
 
 fn main() -> Result<()> {
-    let _ = dotenv();
+    load_dotenv_files()?;
     let cli = Cli::parse();
 
     match cli.command {
@@ -171,6 +171,24 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn load_dotenv_files() -> Result<()> {
+    match dotenv() {
+        Ok(_) => Ok(()),
+        Err(err) if err.not_found() => {
+            if let Some(path) = fallback_dotenv_path() {
+                from_path(&path).with_context(|| {
+                    trf(
+                        "Failed to read dotenv file: {path}",
+                        &[("path", &path.display().to_string())],
+                    )
+                })?;
+            }
+            Ok(())
+        }
+        Err(err) => Err(err).context(tr("Failed to load .env file.")),
+    }
 }
 
 fn handle_completion_command(args: CompletionArgs) {
@@ -407,6 +425,14 @@ fn default_templates_prefix() -> PathBuf {
     }
 }
 
+fn fallback_dotenv_path() -> Option<PathBuf> {
+    env::var("HOME").ok().map(|home| default_dotenv_path_for_home(Path::new(&home)))
+}
+
+fn default_dotenv_path_for_home(home: &Path) -> PathBuf {
+    home.join(".config").join("chatwork-cli").join(".env")
+}
+
 fn expand_home(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
 
@@ -562,6 +588,12 @@ mod tests {
     fn extract_message_id_reads_response_json() {
         let message_id = extract_message_id(r#"{"message_id":"12345"}"#).unwrap();
         assert_eq!(message_id, "12345");
+    }
+
+    #[test]
+    fn default_dotenv_path_for_home_uses_config_directory() {
+        let path = default_dotenv_path_for_home(Path::new("/tmp/example-home"));
+        assert_eq!(path, Path::new("/tmp/example-home/.config/chatwork-cli/.env"));
     }
 
     #[test]
