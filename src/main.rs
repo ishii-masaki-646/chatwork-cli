@@ -10,6 +10,7 @@ use clap_complete::{generate, Shell};
 use dotenvy::{dotenv, from_path};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 mod i18n;
@@ -64,11 +65,16 @@ enum TemplateCommand {
 #[derive(Debug, Subcommand)]
 enum GetCommand {
     /// 自分のアカウント情報を表示する
-    Me(GetMeArgs),
+    Me(GetOutputArgs),
+    /// 未読やタスクの件数を表示する
+    #[command(visible_alias = "my-status")]
+    Status(GetOutputArgs),
+    /// コンタクト一覧を表示する
+    Contacts(GetOutputArgs),
 }
 
 #[derive(Debug, Args)]
-struct GetMeArgs {
+struct GetOutputArgs {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = GetFormat::Json)]
     format: GetFormat,
@@ -185,6 +191,27 @@ struct MeResponse {
     login_mail: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct StatusResponse {
+    unread_room_num: u64,
+    mention_room_num: u64,
+    mytask_room_num: u64,
+    unread_num: u64,
+    mention_num: u64,
+    mytask_num: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ContactResponse {
+    account_id: u64,
+    room_id: Option<u64>,
+    name: String,
+    chatwork_id: String,
+    organization_name: Option<String>,
+    department: Option<String>,
+    avatar_image_url: Option<String>,
+}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -264,6 +291,16 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
             let token = load_api_token()?;
             let me = get_me(DEFAULT_BASE_URL, &token)?;
             print_me(&me, args.format)?;
+        }
+        GetCommand::Status(args) => {
+            let token = load_api_token()?;
+            let status = get_status(DEFAULT_BASE_URL, &token)?;
+            print_status(&status, args.format)?;
+        }
+        GetCommand::Contacts(args) => {
+            let token = load_api_token()?;
+            let contacts = get_contacts(DEFAULT_BASE_URL, &token)?;
+            print_contacts(&contacts, args.format)?;
         }
     }
 
@@ -359,8 +396,11 @@ fn load_api_token() -> Result<String> {
     })
 }
 
-fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
-    let endpoint = format!("{}/me", base_url.trim_end_matches('/'));
+fn get_api_json<T>(base_url: &str, token: &str, path: &str) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let endpoint = format!("{}/{}", base_url.trim_end_matches('/'), path.trim_start_matches('/'));
     let client = Client::new();
     let response = client
         .get(endpoint)
@@ -386,21 +426,45 @@ fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
     serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
 }
 
-fn print_me(me: &MeResponse, format: GetFormat) -> Result<()> {
+fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
+    get_api_json(base_url, token, "/me")
+}
+
+fn get_status(base_url: &str, token: &str) -> Result<StatusResponse> {
+    get_api_json(base_url, token, "/my/status")
+}
+
+fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
+    get_api_json(base_url, token, "/contacts")
+}
+
+fn print_json<T>(value: &T, format: GetFormat) -> Result<()>
+where
+    T: Serialize + ?Sized,
+{
     match format {
         GetFormat::Json => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(me)
+                serde_json::to_string_pretty(value)
                     .context(tr("Failed to serialize output as JSON."))?
             );
         }
         GetFormat::JsonMinify => {
             println!(
                 "{}",
-                serde_json::to_string(me).context(tr("Failed to serialize output as JSON."))?
+                serde_json::to_string(value).context(tr("Failed to serialize output as JSON."))?
             );
         }
+        GetFormat::Plain => unreachable!("plain format must be handled by caller"),
+    }
+
+    Ok(())
+}
+
+fn print_me(me: &MeResponse, format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json | GetFormat::JsonMinify => print_json(me, format)?,
         GetFormat::Plain => {
             println!("account_id={}", me.account_id);
             println!("name={}", me.name);
@@ -453,6 +517,44 @@ fn print_me(me: &MeResponse, format: GetFormat) -> Result<()> {
             }
             if let Some(avatar_image_url) = &me.avatar_image_url {
                 println!("avatar_image_url={avatar_image_url}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn print_status(status: &StatusResponse, format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json | GetFormat::JsonMinify => print_json(status, format)?,
+        GetFormat::Plain => {
+            println!("unread_room_num={}", status.unread_room_num);
+            println!("mention_room_num={}", status.mention_room_num);
+            println!("mytask_room_num={}", status.mytask_room_num);
+            println!("unread_num={}", status.unread_num);
+            println!("mention_num={}", status.mention_num);
+            println!("mytask_num={}", status.mytask_num);
+        }
+    }
+
+    Ok(())
+}
+
+fn print_contacts(contacts: &[ContactResponse], format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json | GetFormat::JsonMinify => print_json(contacts, format)?,
+        GetFormat::Plain => {
+            println!("account_id\tchatwork_id\tname\torganization_name\tdepartment\troom_id");
+            for contact in contacts {
+                println!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    contact.account_id,
+                    contact.chatwork_id,
+                    contact.name,
+                    contact.organization_name.as_deref().unwrap_or(""),
+                    contact.department.as_deref().unwrap_or(""),
+                    contact.room_id.map(|id| id.to_string()).unwrap_or_default(),
+                );
             }
         }
     }
@@ -764,7 +866,7 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Me(GetMeArgs { format: GetFormat::Json })));
+                assert!(matches!(command, GetCommand::Me(GetOutputArgs { format: GetFormat::Json })));
             }
             _ => panic!("get command was not parsed"),
         }
@@ -776,9 +878,45 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Me(GetMeArgs { format: GetFormat::Plain })));
+                assert!(matches!(command, GetCommand::Me(GetOutputArgs { format: GetFormat::Plain })));
             }
             _ => panic!("get command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_status_command_parses_without_config() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "status"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => {
+                assert!(matches!(command, GetCommand::Status(GetOutputArgs { format: GetFormat::Json })));
+            }
+            _ => panic!("get status command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_contacts_command_parses_plain_format() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "contacts", "--format=plain"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => {
+                assert!(matches!(command, GetCommand::Contacts(GetOutputArgs { format: GetFormat::Plain })));
+            }
+            _ => panic!("get command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_my_status_alias_parses_without_config() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "my-status"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => {
+                assert!(matches!(command, GetCommand::Status(GetOutputArgs { format: GetFormat::Json })));
+            }
+            _ => panic!("get my-status command was not parsed"),
         }
     }
 

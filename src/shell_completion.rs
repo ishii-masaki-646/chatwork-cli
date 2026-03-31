@@ -60,6 +60,16 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
                     get_subcmd="me"
                 fi
                 ;;
+            status|my-status)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="status"
+                fi
+                ;;
+            contacts)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="contacts"
+                fi
+                ;;
             show)
                 if [[ "${mode}" == "template" ]]; then
                     template_subcmd="show"
@@ -122,13 +132,13 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
         return 0
     fi
 
-    if [[ "${mode}" == "get" && "${get_subcmd}" == "me" ]]; then
+    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" || "${get_subcmd}" == "contacts" ) ]]; then
         COMPREPLY=( $(compgen -W "--format --config --help" -- "${cur}") )
         return 0
     fi
 
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "me --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "me status my-status contacts --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -261,6 +271,16 @@ _chatwork() {
                     get_subcmd="me"
                 fi
                 ;;
+            status|my-status)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="status"
+                fi
+                ;;
+            contacts)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="contacts"
+                fi
+                ;;
             show)
                 if [[ "${mode}" == "template" ]]; then
                     template_subcmd="show"
@@ -312,7 +332,7 @@ _chatwork() {
             ;;
     esac
 
-    if [[ "${mode}" == "get" && "${get_subcmd}" == "me" ]]; then
+    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" || "${get_subcmd}" == "contacts" ) ]]; then
         local -a opts
         opts=(
             $'--format\t出力形式を指定する'
@@ -327,6 +347,9 @@ _chatwork() {
         local -a opts
         opts=(
             $'me\t自分のアカウント情報を表示する'
+            $'status\t未読やタスクの件数を表示する'
+            $'my-status\tstatus と同じ内容を表示する'
+            $'contacts\tコンタクト一覧を表示する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )

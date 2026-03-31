@@ -86,12 +86,15 @@ body = """
 ```bash
 cargo run -- get me
 cargo run -- get me --format=plain
+cargo run -- get status
+cargo run -- get my-status --format=plain
+cargo run -- get contacts --format=json-minify
 cargo run -- template list --config ./config/config.example.toml
 cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
 cargo run -- send follow_up --config ./config/config.example.toml --room 123456 --var to_id=12345 --var topic=見積 --dry-run
 ```
 
-`get me` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で `key=value` 形式に切り替えられます。
+`get me` / `get status` / `get contacts` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。
 
 `bin/` に出力したバイナリを利用する場合は次のとおりです。
 
