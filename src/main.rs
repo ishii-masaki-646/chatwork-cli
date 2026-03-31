@@ -10,7 +10,7 @@ use clap_complete::{generate, Shell};
 use dotenvy::{dotenv, from_path};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 mod i18n;
 mod shell_completion;
@@ -35,6 +35,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// 情報を取得する
+    Get {
+        #[command(subcommand)]
+        command: GetCommand,
+    },
     /// テンプレートを扱う
     Template {
         #[command(subcommand)]
@@ -54,6 +59,19 @@ enum TemplateCommand {
     List,
     /// テンプレート本文を表示する
     Show(ShowArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum GetCommand {
+    /// 自分のアカウント情報を表示する
+    Me(GetMeArgs),
+}
+
+#[derive(Debug, Args)]
+struct GetMeArgs {
+    /// 出力形式
+    #[arg(long, value_enum, default_value_t = GetFormat::Json)]
+    format: GetFormat,
 }
 
 #[derive(Debug, Args)]
@@ -113,6 +131,13 @@ enum CompletionShell {
     Zsh,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum GetFormat {
+    Json,
+    JsonMinify,
+    Plain,
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct Config {
     default_room_id: Option<String>,
@@ -137,6 +162,29 @@ struct Template {
     body_file: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct MeResponse {
+    account_id: u64,
+    room_id: Option<u64>,
+    name: String,
+    chatwork_id: String,
+    organization_id: Option<u64>,
+    organization_name: Option<String>,
+    department: Option<String>,
+    title: Option<String>,
+    url: Option<String>,
+    introduction: Option<String>,
+    mail: Option<String>,
+    tel_organization: Option<String>,
+    tel_extension: Option<String>,
+    tel_mobile: Option<String>,
+    skype: Option<String>,
+    facebook: Option<String>,
+    twitter: Option<String>,
+    avatar_image_url: Option<String>,
+    login_mail: Option<String>,
+}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -158,6 +206,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Get { command } => {
+            handle_get_command(command)?;
+        }
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
             handle_template_command(command, &config)?;
@@ -205,6 +256,18 @@ fn handle_completion_command(args: CompletionArgs) {
 fn load_config_for_cli(path: Option<&Path>) -> Result<Config> {
     let config_path = resolve_config_path(path)?;
     load_config(&config_path)
+}
+
+fn handle_get_command(command: GetCommand) -> Result<()> {
+    match command {
+        GetCommand::Me(args) => {
+            let token = load_api_token()?;
+            let me = get_me(DEFAULT_BASE_URL, &token)?;
+            print_me(&me, args.format)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn handle_complete_templates_command(args: CompleteTemplatesArgs, config_path: Option<&Path>) {
@@ -267,12 +330,7 @@ fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
         return Ok(());
     }
 
-    let token = env::var(TOKEN_ENV_NAME).with_context(|| {
-        trf(
-            "Set the `{token_env}` environment variable.",
-            &[("token_env", TOKEN_ENV_NAME)],
-        )
-    })?;
+    let token = load_api_token()?;
 
     let message_id = send_message(
         &config.base_url,
@@ -288,6 +346,116 @@ fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
             &[("room_id", &room_id), ("message_id", &message_id)],
         )
     );
+
+    Ok(())
+}
+
+fn load_api_token() -> Result<String> {
+    env::var(TOKEN_ENV_NAME).with_context(|| {
+        trf(
+            "Set the `{token_env}` environment variable.",
+            &[("token_env", TOKEN_ENV_NAME)],
+        )
+    })
+}
+
+fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
+    let endpoint = format!("{}/me", base_url.trim_end_matches('/'));
+    let client = Client::new();
+    let response = client
+        .get(endpoint)
+        .header("X-ChatWorkToken", token)
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+
+    serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
+}
+
+fn print_me(me: &MeResponse, format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(me)
+                    .context(tr("Failed to serialize output as JSON."))?
+            );
+        }
+        GetFormat::JsonMinify => {
+            println!(
+                "{}",
+                serde_json::to_string(me).context(tr("Failed to serialize output as JSON."))?
+            );
+        }
+        GetFormat::Plain => {
+            println!("account_id={}", me.account_id);
+            println!("name={}", me.name);
+            println!("chatwork_id={}", me.chatwork_id);
+
+            if let Some(room_id) = me.room_id {
+                println!("room_id={room_id}");
+            }
+            if let Some(organization_id) = me.organization_id {
+                println!("organization_id={organization_id}");
+            }
+            if let Some(organization_name) = &me.organization_name {
+                println!("organization_name={organization_name}");
+            }
+            if let Some(department) = &me.department {
+                println!("department={department}");
+            }
+            if let Some(title) = &me.title {
+                println!("title={title}");
+            }
+            if let Some(url) = &me.url {
+                println!("url={url}");
+            }
+            if let Some(introduction) = &me.introduction {
+                println!("introduction={introduction}");
+            }
+            if let Some(mail) = &me.mail {
+                println!("mail={mail}");
+            }
+            if let Some(login_mail) = &me.login_mail {
+                println!("login_mail={login_mail}");
+            }
+            if let Some(tel_organization) = &me.tel_organization {
+                println!("tel_organization={tel_organization}");
+            }
+            if let Some(tel_extension) = &me.tel_extension {
+                println!("tel_extension={tel_extension}");
+            }
+            if let Some(tel_mobile) = &me.tel_mobile {
+                println!("tel_mobile={tel_mobile}");
+            }
+            if let Some(skype) = &me.skype {
+                println!("skype={skype}");
+            }
+            if let Some(facebook) = &me.facebook {
+                println!("facebook={facebook}");
+            }
+            if let Some(twitter) = &me.twitter {
+                println!("twitter={twitter}");
+            }
+            if let Some(avatar_image_url) = &me.avatar_image_url {
+                println!("avatar_image_url={avatar_image_url}");
+            }
+        }
+    }
 
     Ok(())
 }
@@ -588,6 +756,30 @@ mod tests {
     fn extract_message_id_reads_response_json() {
         let message_id = extract_message_id(r#"{"message_id":"12345"}"#).unwrap();
         assert_eq!(message_id, "12345");
+    }
+
+    #[test]
+    fn get_command_parses_without_config() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "me"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => {
+                assert!(matches!(command, GetCommand::Me(GetMeArgs { format: GetFormat::Json })));
+            }
+            _ => panic!("get command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_command_parses_plain_format() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "me", "--format=plain"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => {
+                assert!(matches!(command, GetCommand::Me(GetMeArgs { format: GetFormat::Plain })));
+            }
+            _ => panic!("get command was not parsed"),
+        }
     }
 
     #[test]

@@ -120,6 +120,7 @@ dependencies = [
  "dotenvy",
  "reqwest",
  "serde",
+ "serde_json",
  "toml",
 ]
 

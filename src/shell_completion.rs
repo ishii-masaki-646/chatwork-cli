@@ -22,6 +22,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
 
     local config=""
     local mode=""
+    local get_subcmd=""
     local template_subcmd=""
     local positional_seen=0
     local i word
@@ -35,6 +36,16 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
                     config="${COMP_WORDS[i]}"
                 fi
                 ;;
+            --format)
+                if (( i + 1 < COMP_CWORD )); then
+                    ((i++))
+                fi
+                ;;
+            get)
+                mode="get"
+                get_subcmd=""
+                positional_seen=0
+                ;;
             template)
                 mode="template"
                 template_subcmd=""
@@ -43,6 +54,11 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             send)
                 mode="send"
                 positional_seen=0
+                ;;
+            me)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="me"
+                fi
                 ;;
             show)
                 if [[ "${mode}" == "template" ]]; then
@@ -80,6 +96,10 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
+        --format)
+            COMPREPLY=( $(compgen -W "json json-minify plain" -- "${cur}") )
+            return 0
+            ;;
         --room|--var)
             return 0
             ;;
@@ -99,6 +119,16 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             return 0
         fi
         COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "me" ]]; then
+        COMPREPLY=( $(compgen -W "--format --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
+        COMPREPLY=( $(compgen -W "me --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -134,7 +164,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
         return 0
     fi
 
-    COMPREPLY=( $(compgen -W "template send completion --config --help --version -h -V" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "get template send completion --config --help --version -h -V" -- "${cur}") )
     return 0
 }
 
@@ -193,6 +223,7 @@ _chatwork() {
 
     local config=""
     local mode=""
+    local get_subcmd=""
     local template_subcmd=""
     local positional_seen=0
     local i word
@@ -206,6 +237,16 @@ _chatwork() {
                     config="${words[i]}"
                 fi
                 ;;
+            --format)
+                if (( i + 1 < CURRENT )); then
+                    ((i++))
+                fi
+                ;;
+            get)
+                mode="get"
+                get_subcmd=""
+                positional_seen=0
+                ;;
             template)
                 mode="template"
                 template_subcmd=""
@@ -214,6 +255,11 @@ _chatwork() {
             send)
                 mode="send"
                 positional_seen=0
+                ;;
+            me)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="me"
+                fi
                 ;;
             show)
                 if [[ "${mode}" == "template" ]]; then
@@ -251,10 +297,42 @@ _chatwork() {
             _files
             return 0
             ;;
+        --format)
+            local -a formats
+            formats=(
+                $'json\t整形済み JSON を出力する'
+                $'json-minify\t1 行 JSON を出力する'
+                $'plain\tkey=value 形式で出力する'
+            )
+            _chatwork_add_described "${formats[@]}"
+            return 0
+            ;;
         --room|--var)
             return 0
             ;;
     esac
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "me" ]]; then
+        local -a opts
+        opts=(
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
+        local -a opts
+        opts=(
+            $'me\t自分のアカウント情報を表示する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
 
     if [[ "${mode}" == "send" ]]; then
         local -a opts templates lines cmd template_specs
@@ -342,6 +420,7 @@ _chatwork() {
 
     local -a opts
     opts=(
+        $'get\t情報を取得する'
         $'template\tテンプレートを扱う'
         $'send\tテンプレートを送信する'
         $'completion\tシェル補完スクリプトを出力する'

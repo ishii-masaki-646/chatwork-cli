@@ -7,6 +7,7 @@
 - テンプレート一覧の表示
 - テンプレート本文のプレビュー
 - 変数を差し込んだうえでの Chatwork 送信
+- 自分のアカウント情報の取得
 
 ## 前提
 
@@ -83,10 +84,14 @@ body = """
 ## 使い方
 
 ```bash
+cargo run -- get me
+cargo run -- get me --format=plain
 cargo run -- template list --config ./config/config.example.toml
 cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
 cargo run -- send follow_up --config ./config/config.example.toml --room 123456 --var to_id=12345 --var topic=見積 --dry-run
 ```
+
+`get me` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で `key=value` 形式に切り替えられます。
 
 `bin/` に出力したバイナリを利用する場合は次のとおりです。
 
