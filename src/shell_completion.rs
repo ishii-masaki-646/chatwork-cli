@@ -21,6 +21,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
     fi
 
     local config=""
+    local download_subcmd=""
     local mode=""
     local get_subcmd=""
     local template_subcmd=""
@@ -40,6 +41,16 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
+                ;;
+            --chat-url|--output|--out-dir|--room-id|--file-id)
+                if (( i + 1 < COMP_CWORD )); then
+                    ((i++))
+                fi
+                ;;
+            download)
+                mode="download"
+                download_subcmd=""
+                positional_seen=0
                 ;;
             get)
                 mode="get"
@@ -68,6 +79,11 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             contacts)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="contacts"
+                fi
+                ;;
+            file)
+                if [[ "${mode}" == "download" ]]; then
+                    download_subcmd="file"
                 fi
                 ;;
             show)
@@ -110,7 +126,14 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             COMPREPLY=( $(compgen -W "json json-minify plain" -- "${cur}") )
             return 0
             ;;
-        --room|--var)
+        --output|--out-dir)
+            COMPREPLY=( $(compgen -f -- "${cur}") )
+            return 0
+            ;;
+        --chat-url)
+            return 0
+            ;;
+        --room-id|--file-id|--room|--var)
             return 0
             ;;
     esac
@@ -139,6 +162,16 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
 
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
         COMPREPLY=( $(compgen -W "me status my-status contacts --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "download" && "${download_subcmd}" == "file" ]]; then
+        COMPREPLY=( $(compgen -W "--chat-url --room-id --file-id --output --out-dir --force --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "download" && -z "${download_subcmd}" ]]; then
+        COMPREPLY=( $(compgen -W "file --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -174,7 +207,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
         return 0
     fi
 
-    COMPREPLY=( $(compgen -W "get template send completion --config --help --version -h -V" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "get download template send completion --config --help --version -h -V" -- "${cur}") )
     return 0
 }
 
@@ -232,6 +265,7 @@ _chatwork() {
     fi
 
     local config=""
+    local download_subcmd=""
     local mode=""
     local get_subcmd=""
     local template_subcmd=""
@@ -251,6 +285,16 @@ _chatwork() {
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
+                ;;
+            --chat-url|--output|--out-dir|--room-id|--file-id)
+                if (( i + 1 < CURRENT )); then
+                    ((i++))
+                fi
+                ;;
+            download)
+                mode="download"
+                download_subcmd=""
+                positional_seen=0
                 ;;
             get)
                 mode="get"
@@ -279,6 +323,11 @@ _chatwork() {
             contacts)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="contacts"
+                fi
+                ;;
+            file)
+                if [[ "${mode}" == "download" ]]; then
+                    download_subcmd="file"
                 fi
                 ;;
             show)
@@ -327,7 +376,14 @@ _chatwork() {
             _chatwork_add_described "${formats[@]}"
             return 0
             ;;
-        --room|--var)
+        --output|--out-dir)
+            _files
+            return 0
+            ;;
+        --chat-url)
+            return 0
+            ;;
+        --room-id|--file-id|--room|--var)
             return 0
             ;;
     esac
@@ -350,6 +406,33 @@ _chatwork() {
             $'status\t未読やタスクの件数を表示する'
             $'my-status\tstatus と同じ内容を表示する'
             $'contacts\tコンタクト一覧を表示する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "download" && "${download_subcmd}" == "file" ]]; then
+        local -a opts
+        opts=(
+            $'--chat-url\tChatwork メッセージ URL から file_id を解決する'
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--file-id\t対象ファイル ID を指定する'
+            $'--output\t保存先ファイルパスまたは既存ディレクトリを指定する'
+            $'--out-dir\t保存先ディレクトリを指定する'
+            $'--force\t既存ファイルを上書きする'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "download" && -z "${download_subcmd}" ]]; then
+        local -a opts
+        opts=(
+            $'file\tチャットのファイルをダウンロードする'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )
@@ -444,6 +527,7 @@ _chatwork() {
     local -a opts
     opts=(
         $'get\t情報を取得する'
+        $'download\tファイルをダウンロードする'
         $'template\tテンプレートを扱う'
         $'send\tテンプレートを送信する'
         $'completion\tシェル補完スクリプトを出力する'

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -10,6 +11,8 @@ use clap_complete::{generate, Shell};
 use dotenvy::{dotenv, from_path};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +24,7 @@ use shell_completion::ShellScript;
 
 const DEFAULT_BASE_URL: &str = "https://api.chatwork.com/v2";
 const TOKEN_ENV_NAME: &str = "CHATWORK_API_TOKEN";
+const DEFAULT_DOWNLOAD_DIR_ENV_NAME: &str = "CHATWORK_DEFAULT_DOWNLOAD_DIR";
 
 #[derive(Debug, Parser)]
 #[command(name = "chatwork-cli")]
@@ -40,6 +44,11 @@ enum Commands {
     Get {
         #[command(subcommand)]
         command: GetCommand,
+    },
+    /// ファイルをダウンロードする
+    Download {
+        #[command(subcommand)]
+        command: DownloadCommand,
     },
     /// テンプレートを扱う
     Template {
@@ -73,11 +82,48 @@ enum GetCommand {
     Contacts(GetOutputArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum DownloadCommand {
+    /// チャットのファイルをダウンロードする
+    File(DownloadFileArgs),
+}
+
 #[derive(Debug, Args)]
 struct GetOutputArgs {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = GetFormat::Json)]
     format: GetFormat,
+}
+
+#[derive(Debug, Args)]
+struct DownloadFileArgs {
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// ファイル ID
+    #[arg(long, value_name = "FILE_ID")]
+    file_id: Option<u64>,
+
+    /// Chatwork メッセージ URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork メッセージ URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
+
+    /// 保存先ファイルパス
+    #[arg(long, value_name = "PATH")]
+    output: Option<PathBuf>,
+
+    /// 保存先ディレクトリ
+    #[arg(long, value_name = "DIR")]
+    out_dir: Option<PathBuf>,
+
+    /// 既存ファイルを上書きする
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -212,6 +258,24 @@ struct ContactResponse {
     avatar_image_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct RoomFileResponse {
+    file_id: u64,
+    filename: String,
+    download_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoomMessageResponse {
+    body: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DownloadTag {
+    file_id: u64,
+    label: String,
+}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -235,6 +299,9 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Get { command } => {
             handle_get_command(command)?;
+        }
+        Commands::Download { command } => {
+            handle_download_command(command)?;
         }
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
@@ -305,6 +372,74 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn handle_download_command(command: DownloadCommand) -> Result<()> {
+    match command {
+        DownloadCommand::File(args) => {
+            let token = load_api_token()?;
+            let files = resolve_download_files(DEFAULT_BASE_URL, &token, &args)?;
+            validate_download_destination_args(args.output.as_deref(), args.out_dir.as_deref(), files.len())?;
+
+            for file in files {
+                let download_url = file
+                    .download_url
+                    .as_deref()
+                    .context(tr("The response does not contain download_url."))?;
+                let output_path = resolve_download_output_path(
+                    &file.filename,
+                    args.output.as_deref(),
+                    args.out_dir.as_deref(),
+                );
+                ensure_output_writable(&output_path, args.force)?;
+                download_to_path(download_url, &output_path)?;
+                println!(
+                    "{}",
+                    trf(
+                        "Downloaded the file. file_id={file_id} path={path}",
+                        &[
+                            ("file_id", &file.file_id.to_string()),
+                            ("path", &output_path.display().to_string()),
+                        ],
+                    )
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) -> Result<Vec<RoomFileResponse>> {
+    if args.chat_url.is_some() && args.chat_url_arg.is_some() {
+        bail!("{}", tr("Specify the chat URL either as an argument or with --chat-url, not both."));
+    }
+
+    let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
+
+    match (args.room_id, args.file_id, chat_url) {
+        (Some(room_id), Some(file_id), None) => {
+            Ok(vec![get_room_file(DEFAULT_BASE_URL, token, room_id, file_id, true)?])
+        }
+        (None, None, Some(chat_url)) => {
+            let (room_id, message_id) = parse_chatwork_message_url(chat_url)?;
+            let message = get_room_message(base_url, token, room_id, message_id)?;
+            let tags = extract_download_tags(&message.body)?;
+            let selected_tags = select_download_tags(&tags)?;
+
+            selected_tags
+                .into_iter()
+                .map(|tag| get_room_file(DEFAULT_BASE_URL, token, room_id, tag.file_id, true))
+                .collect()
+        }
+        (Some(_), None, None) | (None, Some(_), None) => {
+            bail!("{}", tr("Specify both --room-id and --file-id."))
+        }
+        _ => bail!(
+            "{}",
+            tr("Specify either --chat-url or the pair of --room-id and --file-id.")
+        ),
+    }
 }
 
 fn handle_complete_templates_command(args: CompleteTemplatesArgs, config_path: Option<&Path>) {
@@ -426,6 +561,47 @@ where
     serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
 }
 
+fn get_room_file(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    file_id: u64,
+    create_download_url: bool,
+) -> Result<RoomFileResponse> {
+    let endpoint = format!(
+        "{}/rooms/{room_id}/files/{file_id}",
+        base_url.trim_end_matches('/')
+    );
+    let client = Client::new();
+    let response = client
+        .get(endpoint)
+        .header("X-ChatWorkToken", token)
+        .query(&[("create_download_url", if create_download_url { 1 } else { 0 })])
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+
+    serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
+}
+
+fn get_room_message(base_url: &str, token: &str, room_id: u64, message_id: u64) -> Result<RoomMessageResponse> {
+    get_api_json(base_url, token, &format!("/rooms/{room_id}/messages/{message_id}"))
+}
+
 fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
     get_api_json(base_url, token, "/me")
 }
@@ -436,6 +612,275 @@ fn get_status(base_url: &str, token: &str) -> Result<StatusResponse> {
 
 fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
     get_api_json(base_url, token, "/contacts")
+}
+
+fn parse_chatwork_message_url(url: &str) -> Result<(u64, u64)> {
+    let marker = "#!rid";
+    let start = url
+        .find(marker)
+        .context(tr("The URL must contain `#!rid<room_id>-<message_id>`.") )?;
+    let rest = &url[start + marker.len()..];
+    let (room_text, tail) = split_leading_digits(rest)
+        .context(tr("Failed to parse room_id from chat URL."))?;
+
+    let message_text = tail
+        .strip_prefix('-')
+        .and_then(|tail| split_leading_digits(tail).map(|(digits, _)| digits))
+        .context(tr("Failed to parse message_id from chat URL."))?;
+
+    let room_id = room_text
+        .parse::<u64>()
+        .context(tr("Failed to parse room_id from chat URL."))?;
+    let message_id = message_text
+        .parse::<u64>()
+        .context(tr("Failed to parse message_id from chat URL."))?;
+
+    Ok((room_id, message_id))
+}
+
+fn split_leading_digits(text: &str) -> Option<(&str, &str)> {
+    let end = text
+        .char_indices()
+        .find_map(|(idx, ch)| (!ch.is_ascii_digit()).then_some(idx))
+        .unwrap_or(text.len());
+
+    if end == 0 {
+        None
+    } else {
+        Some((&text[..end], &text[end..]))
+    }
+}
+
+fn extract_download_tags(body: &str) -> Result<Vec<DownloadTag>> {
+    let mut tags = Vec::new();
+    let mut rest = body;
+    let marker = "[download:";
+    let closing_tag = "[/download]";
+
+    while let Some(start) = rest.find(marker) {
+        let after_start = &rest[start + marker.len()..];
+        let end = after_start
+            .find(']')
+            .context(tr("Missing closing `]` for download tag."))?;
+        let id_text = after_start[..end].trim();
+        let file_id = id_text
+            .parse::<u64>()
+            .with_context(|| trf("Failed to parse file_id from download tag: {tag}", &[("tag", id_text)]))?;
+        let after_open_tag = &after_start[end + 1..];
+        let close_index = after_open_tag
+            .find(closing_tag)
+            .context(tr("Missing closing `[/download]` for download tag."))?;
+        let label = after_open_tag[..close_index].trim().to_string();
+        tags.push(DownloadTag { file_id, label });
+        rest = &after_open_tag[close_index + closing_tag.len()..];
+    }
+
+    if tags.is_empty() {
+        bail!("{}", tr("The message does not contain a download tag."));
+    }
+
+    Ok(tags)
+}
+
+fn select_download_tags(tags: &[DownloadTag]) -> Result<Vec<DownloadTag>> {
+    match tags {
+        [tag] => Ok(vec![tag.clone()]),
+        _ => prompt_download_selection(tags),
+    }
+}
+
+fn prompt_download_selection(tags: &[DownloadTag]) -> Result<Vec<DownloadTag>> {
+    let mut stdout = io::stdout();
+
+    loop {
+        writeln!(stdout, "{}", tr("Multiple download tags were found:"))?;
+        for (index, tag) in tags.iter().enumerate() {
+            writeln!(stdout, "{}. {} (file_id={})", index + 1, tag.label, tag.file_id)?;
+        }
+        let input = read_selection_line(&mut stdout, &tr("Select numbers, ranges, or [A]ll (default: All):"))?;
+        if let Some(selected) = parse_download_selection_input(input.trim(), tags) {
+            return Ok(selected);
+        }
+
+        writeln!(
+            stdout,
+            "{}",
+            tr("Invalid selection. Enter numbers, ranges, commas, or A.")
+        )?;
+    }
+}
+
+fn read_selection_line(stdout: &mut io::Stdout, prompt: &str) -> Result<String> {
+    match DefaultEditor::new() {
+        Ok(mut editor) => match editor.readline(&format!("{prompt} ")) {
+            Ok(line) => Ok(line),
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => Ok(String::new()),
+            Err(_) => read_selection_line_fallback(stdout, prompt),
+        },
+        Err(_) => read_selection_line_fallback(stdout, prompt),
+    }
+}
+
+fn read_selection_line_fallback(stdout: &mut io::Stdout, prompt: &str) -> Result<String> {
+    write!(stdout, "{prompt} ")?;
+    stdout.flush()?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context(tr("Failed to read selection from stdin."))?;
+    Ok(input)
+}
+
+fn parse_download_selection_input(input: &str, tags: &[DownloadTag]) -> Option<Vec<DownloadTag>> {
+    if input.is_empty() || input.eq_ignore_ascii_case("a") || input.eq_ignore_ascii_case("all") {
+        return Some(tags.to_vec());
+    }
+
+    let mut selected = Vec::new();
+    let mut seen = vec![false; tags.len()];
+
+    for part in input.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return None;
+        }
+
+        if let Some((start_text, end_text)) = part.split_once('-') {
+            let start = start_text.trim().parse::<usize>().ok()?;
+            let end = end_text.trim().parse::<usize>().ok()?;
+            if start == 0 || end == 0 || start > end || end > tags.len() {
+                return None;
+            }
+
+            for index in start..=end {
+                if !seen[index - 1] {
+                    selected.push(tags[index - 1].clone());
+                    seen[index - 1] = true;
+                }
+            }
+            continue;
+        }
+
+        let index = part.parse::<usize>().ok()?;
+        if index == 0 || index > tags.len() {
+            return None;
+        }
+        if !seen[index - 1] {
+            selected.push(tags[index - 1].clone());
+            seen[index - 1] = true;
+        }
+    }
+
+    if selected.is_empty() {
+        None
+    } else {
+        Some(selected)
+    }
+}
+
+fn validate_download_destination_args(output: Option<&Path>, out_dir: Option<&Path>, file_count: usize) -> Result<()> {
+    if output.is_some() && out_dir.is_some() {
+        bail!("{}", tr("Specify either --output or --out-dir, not both."));
+    }
+
+    if file_count > 1 {
+        if let Some(path) = output {
+            let expanded = expand_home(path);
+            if !expanded.is_dir() {
+                bail!(
+                    "{}",
+                    tr("Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path.")
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_download_output_path(filename: &str, output: Option<&Path>, out_dir: Option<&Path>) -> PathBuf {
+    if let Some(dir) = out_dir {
+        return expand_home(dir).join(filename);
+    }
+
+    match output {
+        Some(path) => {
+            let expanded = expand_home(path);
+            if expanded.is_dir() {
+                expanded.join(filename)
+            } else {
+                expanded
+            }
+        }
+        None => load_default_download_dir()
+            .map(|dir| dir.join(filename))
+            .unwrap_or_else(|| PathBuf::from(filename)),
+    }
+}
+
+fn load_default_download_dir() -> Option<PathBuf> {
+    env::var_os(DEFAULT_DOWNLOAD_DIR_ENV_NAME)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|path| expand_home(&path))
+}
+
+fn ensure_output_writable(path: &Path, force: bool) -> Result<()> {
+    if path.exists() && !force {
+        bail!(
+            "{}",
+            trf(
+                "Output file already exists. Use --force to overwrite: {path}",
+                &[("path", &path.display().to_string())],
+            )
+        );
+    }
+
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).with_context(|| {
+            trf(
+                "Failed to create output directory: {path}",
+                &[("path", &parent.display().to_string())],
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn download_to_path(download_url: &str, output_path: &Path) -> Result<()> {
+    let client = Client::new();
+    let response = client
+        .get(download_url)
+        .send()
+        .context(tr("Failed to download file from Chatwork."))?;
+
+    let status = response.status();
+    if status != StatusCode::OK {
+        let body = response
+            .text()
+            .unwrap_or_else(|_| String::from("<unavailable>"));
+        bail!(
+            "{}",
+            trf(
+                "File download returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &body)],
+            )
+        );
+    }
+
+    let bytes = response
+        .bytes()
+        .context(tr("Failed to read downloaded file body."))?;
+    fs::write(output_path, &bytes).with_context(|| {
+        trf(
+            "Failed to write downloaded file: {path}",
+            &[("path", &output_path.display().to_string())],
+        )
+    })?;
+
+    Ok(())
 }
 
 fn print_json<T>(value: &T, format: GetFormat) -> Result<()>
@@ -918,6 +1363,326 @@ mod tests {
             }
             _ => panic!("get my-status command was not parsed"),
         }
+    }
+
+    #[test]
+    fn download_file_command_parses_without_config() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "download",
+            "file",
+            "--room-id",
+            "123",
+            "--file-id",
+            "456",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Download { command } => match command {
+                DownloadCommand::File(args) => {
+                    assert_eq!(args.room_id, Some(123));
+                    assert_eq!(args.file_id, Some(456));
+                    assert_eq!(args.chat_url, None);
+                    assert_eq!(args.chat_url_arg, None);
+                    assert_eq!(args.output, None);
+                    assert_eq!(args.out_dir, None);
+                    assert!(!args.force);
+                }
+            },
+            _ => panic!("download file command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_filename_by_default() {
+        env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
+        let path = resolve_download_output_path("report.txt", None, None);
+        assert_eq!(path, Path::new("report.txt"));
+    }
+
+    #[test]
+    fn download_file_command_parses_chat_url_as_positional_argument() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "download",
+            "file",
+            "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Download { command } => match command {
+                DownloadCommand::File(args) => {
+                    assert_eq!(args.room_id, None);
+                    assert_eq!(args.file_id, None);
+                    assert_eq!(args.chat_url, None);
+                    assert_eq!(
+                        args.chat_url_arg.as_deref(),
+                        Some("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+                    );
+                }
+            },
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn resolve_download_files_rejects_both_chat_url_forms() {
+        let err = resolve_download_files(
+            DEFAULT_BASE_URL,
+            "dummy-token",
+            &DownloadFileArgs {
+                room_id: None,
+                file_id: None,
+                chat_url: Some("https://www.chatwork.com/#!rid1-2".to_string()),
+                chat_url_arg: Some("https://www.chatwork.com/#!rid1-2".to_string()),
+                output: None,
+                out_dir: None,
+                force: false,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            tr("Specify the chat URL either as an argument or with --chat-url, not both.")
+        );
+    }
+
+    #[test]
+    fn resolve_download_files_rejects_chat_url_with_room_and_file_ids() {
+        let err = resolve_download_files(
+            DEFAULT_BASE_URL,
+            "dummy-token",
+            &DownloadFileArgs {
+                room_id: Some(123),
+                file_id: Some(456),
+                chat_url: None,
+                chat_url_arg: Some("https://www.chatwork.com/#!rid1-2".to_string()),
+                output: None,
+                out_dir: None,
+                force: false,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            tr("Specify either --chat-url or the pair of --room-id and --file-id.")
+        );
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_default_download_dir_from_env() {
+        env::set_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME, "~/Downloads");
+        env::set_var("HOME", "/tmp/chatwork-cli-home");
+
+        let path = resolve_download_output_path("report.txt", None, None);
+
+        assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+
+        env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
+    }
+
+    #[test]
+    fn parse_chatwork_message_url_reads_room_and_message_ids() {
+        let (room_id, message_id) =
+            parse_chatwork_message_url("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+                .unwrap();
+        assert_eq!(room_id, 32293227);
+        assert_eq!(message_id, 2090707858361688064);
+    }
+
+    #[test]
+    fn extract_download_tags_reads_single_tag() {
+        let tags = extract_download_tags(
+            "[info][download:2019373427]file.zip (1 KB)[/download][/info]",
+        )
+        .unwrap();
+        assert_eq!(
+            tags,
+            vec![DownloadTag {
+                file_id: 2019373427,
+                label: "file.zip (1 KB)".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn extract_download_tags_reads_multiple_tags() {
+        let tags = extract_download_tags(
+            "[download:1]a.zip[/download]\n[download:2]b.zip[/download]",
+        )
+        .unwrap();
+        assert_eq!(
+            tags,
+            vec![
+                DownloadTag {
+                    file_id: 1,
+                    label: "a.zip".to_string(),
+                },
+                DownloadTag {
+                    file_id: 2,
+                    label: "b.zip".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_download_selection_input_uses_all_for_empty_input() {
+        let tags = vec![
+            DownloadTag {
+                file_id: 1,
+                label: "a.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 2,
+                label: "b.zip".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            parse_download_selection_input("", &tags),
+            Some(tags),
+        );
+    }
+
+    #[test]
+    fn parse_download_selection_input_reads_single_number() {
+        let tags = vec![
+            DownloadTag {
+                file_id: 1,
+                label: "a.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 2,
+                label: "b.zip".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            parse_download_selection_input("2", &tags),
+            Some(vec![tags[1].clone()]),
+        );
+    }
+
+    #[test]
+    fn parse_download_selection_input_reads_ranges_and_lists() {
+        let tags = vec![
+            DownloadTag {
+                file_id: 1,
+                label: "a.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 2,
+                label: "b.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 3,
+                label: "c.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 4,
+                label: "d.zip".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            parse_download_selection_input("1,3-4", &tags),
+            Some(vec![tags[0].clone(), tags[2].clone(), tags[3].clone()]),
+        );
+        assert_eq!(
+            parse_download_selection_input("2-3", &tags),
+            Some(vec![tags[1].clone(), tags[2].clone()]),
+        );
+    }
+
+    #[test]
+    fn parse_download_selection_input_deduplicates_indices() {
+        let tags = vec![
+            DownloadTag {
+                file_id: 1,
+                label: "a.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 2,
+                label: "b.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 3,
+                label: "c.zip".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            parse_download_selection_input("1,1-2,2", &tags),
+            Some(vec![tags[0].clone(), tags[1].clone()]),
+        );
+    }
+
+    #[test]
+    fn parse_download_selection_input_rejects_invalid_ranges() {
+        let tags = vec![
+            DownloadTag {
+                file_id: 1,
+                label: "a.zip".to_string(),
+            },
+            DownloadTag {
+                file_id: 2,
+                label: "b.zip".to_string(),
+            },
+        ];
+
+        assert_eq!(parse_download_selection_input("0", &tags), None);
+        assert_eq!(parse_download_selection_input("3", &tags), None);
+        assert_eq!(parse_download_selection_input("2-1", &tags), None);
+        assert_eq!(parse_download_selection_input("1,", &tags), None);
+        assert_eq!(parse_download_selection_input("1-a", &tags), None);
+    }
+
+    #[test]
+    fn resolve_download_output_path_expands_home() {
+        env::set_var("HOME", "/tmp/chatwork-cli-home");
+        let path = resolve_download_output_path("report.txt", Some(Path::new("~/Downloads/report.txt")), None);
+        assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_filename_when_output_is_directory() {
+        let dir = temp_test_dir("resolve_download_output_path_uses_filename_when_output_is_directory");
+        fs::create_dir_all(&dir).unwrap();
+        let path = resolve_download_output_path("report.txt", Some(&dir), None);
+        assert_eq!(path, dir.join("report.txt"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_out_dir() {
+        let path = resolve_download_output_path("report.txt", None, Some(Path::new("/tmp/downloads")));
+        assert_eq!(path, Path::new("/tmp/downloads/report.txt"));
+    }
+
+    #[test]
+    fn validate_download_destination_args_rejects_both_output_and_out_dir() {
+        let err = validate_download_destination_args(
+            Some(Path::new("/tmp/report.txt")),
+            Some(Path::new("/tmp/downloads")),
+            1,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), tr("Specify either --output or --out-dir, not both."));
+    }
+
+    #[test]
+    fn validate_download_destination_args_rejects_single_output_path_for_multiple_files() {
+        let err =
+            validate_download_destination_args(Some(Path::new("/tmp/report.txt")), None, 2).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            tr("Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path."),
+        );
     }
 
     #[test]
