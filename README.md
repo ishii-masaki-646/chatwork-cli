@@ -8,6 +8,7 @@
 - テンプレート本文のプレビュー
 - 変数を差し込んだうえでの Chatwork 送信
 - 自分のアカウント情報の取得
+- Chatwork ファイルのダウンロード
 
 ## 前提
 
@@ -89,12 +90,17 @@ cargo run -- get me --format=plain
 cargo run -- get status
 cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
+cargo run -- download file --room-id 123 --file-id 456
+cargo run -- download file --room-id 123 --file-id 456 --output ./downloads/report.zip --force
+cargo run -- download file --room-id 123 --file-id 456 --out-dir ./downloads
 cargo run -- template list --config ./config/config.example.toml
 cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
 cargo run -- send follow_up --config ./config/config.example.toml --room 123456 --var to_id=12345 --var topic=見積 --dry-run
 ```
 
 `get me` / `get status` / `get contacts` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。
+
+`download file` は `--room-id` と `--file-id` を指定してファイルを保存します。`--output` を省略した場合は API が返した `filename` をそのまま保存先に使います。`--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。ディレクトリを明示する場合は `--out-dir` も使えます。`--output` と `--out-dir` は同時指定できません。既存ファイルへ上書きする場合は `--force` を付けてください。
 
 `bin/` に出力したバイナリを利用する場合は次のとおりです。
 

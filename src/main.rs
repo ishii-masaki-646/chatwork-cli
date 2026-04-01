@@ -41,6 +41,11 @@ enum Commands {
         #[command(subcommand)]
         command: GetCommand,
     },
+    /// ファイルをダウンロードする
+    Download {
+        #[command(subcommand)]
+        command: DownloadCommand,
+    },
     /// テンプレートを扱う
     Template {
         #[command(subcommand)]
@@ -73,11 +78,40 @@ enum GetCommand {
     Contacts(GetOutputArgs),
 }
 
+#[derive(Debug, Subcommand)]
+enum DownloadCommand {
+    /// チャットのファイルをダウンロードする
+    File(DownloadFileArgs),
+}
+
 #[derive(Debug, Args)]
 struct GetOutputArgs {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = GetFormat::Json)]
     format: GetFormat,
+}
+
+#[derive(Debug, Args)]
+struct DownloadFileArgs {
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: u64,
+
+    /// ファイル ID
+    #[arg(long, value_name = "FILE_ID")]
+    file_id: u64,
+
+    /// 保存先ファイルパス
+    #[arg(long, value_name = "PATH")]
+    output: Option<PathBuf>,
+
+    /// 保存先ディレクトリ
+    #[arg(long, value_name = "DIR")]
+    out_dir: Option<PathBuf>,
+
+    /// 既存ファイルを上書きする
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -212,6 +246,13 @@ struct ContactResponse {
     avatar_image_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct RoomFileResponse {
+    file_id: u64,
+    filename: String,
+    download_url: Option<String>,
+}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -235,6 +276,9 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Get { command } => {
             handle_get_command(command)?;
+        }
+        Commands::Download { command } => {
+            handle_download_command(command)?;
         }
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
@@ -301,6 +345,39 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
             let token = load_api_token()?;
             let contacts = get_contacts(DEFAULT_BASE_URL, &token)?;
             print_contacts(&contacts, args.format)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_download_command(command: DownloadCommand) -> Result<()> {
+    match command {
+        DownloadCommand::File(args) => {
+            let token = load_api_token()?;
+            let file = get_room_file(DEFAULT_BASE_URL, &token, args.room_id, args.file_id, true)?;
+            let download_url = file
+                .download_url
+                .as_deref()
+                .context(tr("The response does not contain download_url."))?;
+            validate_download_destination_args(args.output.as_deref(), args.out_dir.as_deref())?;
+            let output_path = resolve_download_output_path(
+                &file.filename,
+                args.output.as_deref(),
+                args.out_dir.as_deref(),
+            );
+            ensure_output_writable(&output_path, args.force)?;
+            download_to_path(download_url, &output_path)?;
+            println!(
+                "{}",
+                trf(
+                    "Downloaded the file. file_id={file_id} path={path}",
+                    &[
+                        ("file_id", &file.file_id.to_string()),
+                        ("path", &output_path.display().to_string()),
+                    ],
+                )
+            );
         }
     }
 
@@ -426,6 +503,43 @@ where
     serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
 }
 
+fn get_room_file(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    file_id: u64,
+    create_download_url: bool,
+) -> Result<RoomFileResponse> {
+    let endpoint = format!(
+        "{}/rooms/{room_id}/files/{file_id}",
+        base_url.trim_end_matches('/')
+    );
+    let client = Client::new();
+    let response = client
+        .get(endpoint)
+        .header("X-ChatWorkToken", token)
+        .query(&[("create_download_url", if create_download_url { 1 } else { 0 })])
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+
+    serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
+}
+
 fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
     get_api_json(base_url, token, "/me")
 }
@@ -436,6 +550,89 @@ fn get_status(base_url: &str, token: &str) -> Result<StatusResponse> {
 
 fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
     get_api_json(base_url, token, "/contacts")
+}
+
+fn validate_download_destination_args(output: Option<&Path>, out_dir: Option<&Path>) -> Result<()> {
+    if output.is_some() && out_dir.is_some() {
+        bail!("{}", tr("Specify either --output or --out-dir, not both."));
+    }
+
+    Ok(())
+}
+
+fn resolve_download_output_path(filename: &str, output: Option<&Path>, out_dir: Option<&Path>) -> PathBuf {
+    if let Some(dir) = out_dir {
+        return expand_home(dir).join(filename);
+    }
+
+    match output {
+        Some(path) => {
+            let expanded = expand_home(path);
+            if expanded.is_dir() {
+                expanded.join(filename)
+            } else {
+                expanded
+            }
+        }
+        None => PathBuf::from(filename),
+    }
+}
+
+fn ensure_output_writable(path: &Path, force: bool) -> Result<()> {
+    if path.exists() && !force {
+        bail!(
+            "{}",
+            trf(
+                "Output file already exists. Use --force to overwrite: {path}",
+                &[("path", &path.display().to_string())],
+            )
+        );
+    }
+
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).with_context(|| {
+            trf(
+                "Failed to create output directory: {path}",
+                &[("path", &parent.display().to_string())],
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn download_to_path(download_url: &str, output_path: &Path) -> Result<()> {
+    let client = Client::new();
+    let response = client
+        .get(download_url)
+        .send()
+        .context(tr("Failed to download file from Chatwork."))?;
+
+    let status = response.status();
+    if status != StatusCode::OK {
+        let body = response
+            .text()
+            .unwrap_or_else(|_| String::from("<unavailable>"));
+        bail!(
+            "{}",
+            trf(
+                "File download returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &body)],
+            )
+        );
+    }
+
+    let bytes = response
+        .bytes()
+        .context(tr("Failed to read downloaded file body."))?;
+    fs::write(output_path, &bytes).with_context(|| {
+        trf(
+            "Failed to write downloaded file: {path}",
+            &[("path", &output_path.display().to_string())],
+        )
+    })?;
+
+    Ok(())
 }
 
 fn print_json<T>(value: &T, format: GetFormat) -> Result<()>
@@ -918,6 +1115,71 @@ mod tests {
             }
             _ => panic!("get my-status command was not parsed"),
         }
+    }
+
+    #[test]
+    fn download_file_command_parses_without_config() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "download",
+            "file",
+            "--room-id",
+            "123",
+            "--file-id",
+            "456",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Download { command } => match command {
+                DownloadCommand::File(args) => {
+                    assert_eq!(args.room_id, 123);
+                    assert_eq!(args.file_id, 456);
+                    assert_eq!(args.output, None);
+                    assert_eq!(args.out_dir, None);
+                    assert!(!args.force);
+                }
+            },
+            _ => panic!("download file command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_filename_by_default() {
+        let path = resolve_download_output_path("report.txt", None, None);
+        assert_eq!(path, Path::new("report.txt"));
+    }
+
+    #[test]
+    fn resolve_download_output_path_expands_home() {
+        env::set_var("HOME", "/tmp/chatwork-cli-home");
+        let path = resolve_download_output_path("report.txt", Some(Path::new("~/Downloads/report.txt")), None);
+        assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_filename_when_output_is_directory() {
+        let dir = temp_test_dir("resolve_download_output_path_uses_filename_when_output_is_directory");
+        fs::create_dir_all(&dir).unwrap();
+        let path = resolve_download_output_path("report.txt", Some(&dir), None);
+        assert_eq!(path, dir.join("report.txt"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_download_output_path_uses_out_dir() {
+        let path = resolve_download_output_path("report.txt", None, Some(Path::new("/tmp/downloads")));
+        assert_eq!(path, Path::new("/tmp/downloads/report.txt"));
+    }
+
+    #[test]
+    fn validate_download_destination_args_rejects_both_output_and_out_dir() {
+        let err = validate_download_destination_args(
+            Some(Path::new("/tmp/report.txt")),
+            Some(Path::new("/tmp/downloads")),
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), tr("Specify either --output or --out-dir, not both."));
     }
 
     #[test]
