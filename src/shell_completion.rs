@@ -167,7 +167,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room-id|--room|--message|--var)
+            --room-id|--room|--message|--var|--aids|--name-query)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -222,8 +222,13 @@ _chatwork() {
         return 0
     fi
 
-    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" || "${get_subcmd}" == "contacts" ) ]]; then
+    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" ) ]]; then
         COMPREPLY=( $(compgen -W "--format --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "contacts" ]]; then
+        COMPREPLY=( $(compgen -W "--aids --name-query --format --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -527,14 +532,27 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--room|--message|--var)
+        --room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
             return 0
             ;;
     esac
 
-    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" || "${get_subcmd}" == "contacts" ) ]]; then
+    if [[ "${mode}" == "get" && ( "${get_subcmd}" == "me" || "${get_subcmd}" == "status" ) ]]; then
         local -a opts
         opts=(
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "contacts" ]]; then
+        local -a opts
+        opts=(
+            $'--aids\t対象 account_id をカンマ区切りで指定する'
+            $'--name-query\t名前で部分一致検索する'
             $'--format\t出力形式を指定する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'

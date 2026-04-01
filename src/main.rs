@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
@@ -90,7 +90,7 @@ enum GetCommand {
     #[command(visible_alias = "my-status")]
     Status(GetOutputArgs),
     /// コンタクト一覧を表示する
-    Contacts(GetOutputArgs),
+    Contacts(GetContactsArgs),
     /// ルーム情報を表示する
     Room(GetRoomArgs),
     /// メッセージ情報を表示する
@@ -108,6 +108,20 @@ struct GetOutputArgs {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = GetFormat::Json)]
     format: GetFormat,
+}
+
+#[derive(Debug, Args)]
+struct GetContactsArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// 対象 account_id をカンマ区切りで指定する
+    #[arg(long = "aids", value_name = "ACCOUNT_ID[,ACCOUNT_ID...]", value_delimiter = ',')]
+    aids: Vec<u64>,
+
+    /// 名前で部分一致検索する
+    #[arg(long = "name-query", value_name = "TEXT")]
+    name_query: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -1002,7 +1016,8 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
         GetCommand::Contacts(args) => {
             let token = load_api_token()?;
             let contacts = get_contacts(DEFAULT_BASE_URL, &token)?;
-            print_contacts(&contacts, args.format)?;
+            let contacts = filter_contacts(contacts, &args.aids, args.name_query.as_deref());
+            print_contacts(&contacts, args.output.format)?;
         }
         GetCommand::Room(args) => {
             let token = load_api_token()?;
@@ -1308,6 +1323,44 @@ fn get_status(base_url: &str, token: &str) -> Result<StatusResponse> {
 
 fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
     get_api_json(base_url, token, "/contacts")
+}
+
+fn filter_contacts(
+    contacts: Vec<ContactResponse>,
+    account_ids: &[u64],
+    name_query: Option<&str>,
+) -> Vec<ContactResponse> {
+    let contacts = filter_contacts_by_account_ids(contacts, account_ids);
+    filter_contacts_by_name_query(contacts, name_query)
+}
+
+fn filter_contacts_by_account_ids(
+    contacts: Vec<ContactResponse>,
+    account_ids: &[u64],
+) -> Vec<ContactResponse> {
+    if account_ids.is_empty() {
+        return contacts;
+    }
+
+    let account_ids: HashSet<u64> = account_ids.iter().copied().collect();
+    contacts
+        .into_iter()
+        .filter(|contact| account_ids.contains(&contact.account_id))
+        .collect()
+}
+
+fn filter_contacts_by_name_query(
+    contacts: Vec<ContactResponse>,
+    name_query: Option<&str>,
+) -> Vec<ContactResponse> {
+    let Some(name_query) = name_query.map(str::trim).filter(|query| !query.is_empty()) else {
+        return contacts;
+    };
+
+    contacts
+        .into_iter()
+        .filter(|contact| contact.name.contains(name_query))
+        .collect()
 }
 
 fn resolve_get_room_id(args: &GetRoomArgs) -> Result<u64> {
@@ -2187,10 +2240,143 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Contacts(GetOutputArgs { format: GetFormat::Plain })));
+                assert!(matches!(
+                    command,
+                    GetCommand::Contacts(GetContactsArgs {
+                        output: GetOutputArgs { format: GetFormat::Plain },
+                        ..
+                    })
+                ));
             }
             _ => panic!("get command was not parsed"),
         }
+    }
+
+    #[test]
+    fn get_contacts_command_parses_aids_filter() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "get",
+            "contacts",
+            "--aids=123,456,789",
+            "--format=json-minify",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Contacts(args) => {
+                    assert!(matches!(args.output.format, GetFormat::JsonMinify));
+                    assert_eq!(args.aids, vec![123, 456, 789]);
+                    assert_eq!(args.name_query, None);
+                }
+                _ => panic!("get contacts command was not parsed"),
+            },
+            _ => panic!("get command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_contacts_command_parses_name_query_filter() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "get",
+            "contacts",
+            "--name-query",
+            "石",
+            "--format=json-minify",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Contacts(args) => {
+                    assert!(matches!(args.output.format, GetFormat::JsonMinify));
+                    assert_eq!(args.aids, Vec::<u64>::new());
+                    assert_eq!(args.name_query.as_deref(), Some("石"));
+                }
+                _ => panic!("get contacts command was not parsed"),
+            },
+            _ => panic!("get command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn filter_contacts_by_account_ids_keeps_only_requested_contacts() {
+        let contacts = vec![
+            ContactResponse {
+                account_id: 10,
+                room_id: Some(100),
+                name: "A".to_string(),
+                chatwork_id: "a".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+            ContactResponse {
+                account_id: 20,
+                room_id: Some(200),
+                name: "B".to_string(),
+                chatwork_id: "b".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+            ContactResponse {
+                account_id: 30,
+                room_id: Some(300),
+                name: "C".to_string(),
+                chatwork_id: "c".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+        ];
+
+        let filtered = filter_contacts_by_account_ids(contacts, &[30, 10]);
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].account_id, 10);
+        assert_eq!(filtered[1].account_id, 30);
+    }
+
+    #[test]
+    fn filter_contacts_by_name_query_keeps_partial_matches() {
+        let contacts = vec![
+            ContactResponse {
+                account_id: 10,
+                room_id: Some(100),
+                name: "石川 洋平".to_string(),
+                chatwork_id: "a".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+            ContactResponse {
+                account_id: 20,
+                room_id: Some(200),
+                name: "野口 尭広".to_string(),
+                chatwork_id: "b".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+            ContactResponse {
+                account_id: 30,
+                room_id: Some(300),
+                name: "村石恭一".to_string(),
+                chatwork_id: "c".to_string(),
+                organization_name: None,
+                department: None,
+                avatar_image_url: None,
+            },
+        ];
+
+        let filtered = filter_contacts_by_name_query(contacts, Some("石"));
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].account_id, 10);
+        assert_eq!(filtered[1].account_id, 30);
     }
 
     #[test]
