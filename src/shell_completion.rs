@@ -42,7 +42,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
                     ((i++))
                 fi
                 ;;
-            --output|--out-dir|--room-id|--file-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -130,6 +130,9 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
+        --chat-url)
+            return 0
+            ;;
         --room-id|--file-id|--room|--var)
             return 0
             ;;
@@ -163,7 +166,7 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
     fi
 
     if [[ "${mode}" == "download" && "${download_subcmd}" == "file" ]]; then
-        COMPREPLY=( $(compgen -W "--room-id --file-id --output --out-dir --force --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "--chat-url --room-id --file-id --output --out-dir --force --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -283,7 +286,7 @@ _chatwork() {
                     ((i++))
                 fi
                 ;;
-            --output|--out-dir|--room-id|--file-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -377,6 +380,9 @@ _chatwork() {
             _files
             return 0
             ;;
+        --chat-url)
+            return 0
+            ;;
         --room-id|--file-id|--room|--var)
             return 0
             ;;
@@ -410,6 +416,7 @@ _chatwork() {
     if [[ "${mode}" == "download" && "${download_subcmd}" == "file" ]]; then
         local -a opts
         opts=(
+            $'--chat-url\tChatwork メッセージ URL から file_id を解決する'
             $'--room-id\t対象ルーム ID を指定する'
             $'--file-id\t対象ファイル ID を指定する'
             $'--output\t保存先ファイルパスまたは既存ディレクトリを指定する'
