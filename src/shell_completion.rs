@@ -184,6 +184,29 @@ _chatwork() {
         esac
     done
 
+    if [[ "${cur}" == --*=* ]]; then
+        local opt value
+        opt="${cur%%=*}"
+        value="${cur#*=}"
+        case "${opt}" in
+            --config|--output|--out-dir)
+                local -a values
+                values=( $(compgen -f -- "${value}") )
+                COMPREPLY=( "${values[@]/#/${opt}=}" )
+                return 0
+                ;;
+            --format)
+                local -a values
+                values=( $(compgen -W "json json-minify plain" -- "${value}") )
+                COMPREPLY=( "${values[@]/#/${opt}=}" )
+                return 0
+                ;;
+            --chat-url|--room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
+                return 0
+                ;;
+        esac
+    fi
+
     case "${prev}" in
         --config)
             COMPREPLY=( $(compgen -f -- "${cur}") )
@@ -509,6 +532,32 @@ _chatwork() {
                 ;;
         esac
     done
+
+    if [[ "${cur}" == --*=* ]]; then
+        local opt
+        opt="${cur%%=*}"
+        case "${opt}" in
+            --config|--output|--out-dir)
+                compset -P "${opt}="
+                _files
+                return 0
+                ;;
+            --format)
+                compset -P "${opt}="
+                local -a formats
+                formats=(
+                    $'json\t整形済み JSON を出力する'
+                    $'json-minify\t1 行 JSON を出力する'
+                    $'plain\tkey=value 形式で出力する'
+                )
+                _chatwork_add_described "${formats[@]}"
+                return 0
+                ;;
+            --chat-url|--room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
+                return 0
+                ;;
+        esac
+    fi
 
     case "${prev}" in
         --config)
