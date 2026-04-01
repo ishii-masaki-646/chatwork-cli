@@ -228,7 +228,7 @@ _chatwork() {
     fi
 
     if [[ "${mode}" == "download" && -z "${download_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "file --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "--chat-url --room-id --file-id --output --out-dir --force --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -546,7 +546,12 @@ _chatwork() {
     if [[ "${mode}" == "download" && -z "${download_subcmd}" ]]; then
         local -a opts
         opts=(
-            $'file\tチャットのファイルをダウンロードする'
+            $'--chat-url\tChatwork メッセージ URL から file_id を解決する'
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--file-id\t対象ファイル ID を指定する'
+            $'--output\t保存先ファイルパスまたは既存ディレクトリを指定する'
+            $'--out-dir\t保存先ディレクトリを指定する'
+            $'--force\t既存ファイルを上書きする'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )

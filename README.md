@@ -91,6 +91,8 @@ cargo run -- get me --format=plain
 cargo run -- get status
 cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
+cargo run -- download 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
+cargo run -- download --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download file 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download file --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download file --room-id 123 --file-id 456
@@ -103,7 +105,7 @@ cargo run -- send follow_up --config ./config/config.example.toml --room 123456 
 
 `get me` / `get status` / `get contacts` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。
 
-`download file` は `--chat-url` または位置引数で Chatwork のメッセージ URL を渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は `--room-id` と `--file-id` の組み合わせも使えます。`--output` を省略した場合は API が返した `filename` をそのまま保存先に使います。`.env` や通常の環境変数で `CHATWORK_DEFAULT_DOWNLOAD_DIR` を指定している場合は、`--output` / `--out-dir` がないときの既定保存先として利用します。`--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。ディレクトリを明示する場合は `--out-dir` も使えます。`--output` と `--out-dir` は同時指定できません。既存ファイルへ上書きする場合は `--force` を付けてください。メッセージ内に `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A`/`all` で選択できます。空 Enter は `All` 扱いです。
+`download` は、item を省略した場合に暗黙的に `download file` として扱います。`--chat-url` または位置引数で Chatwork のメッセージ URL を渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は `--room-id` と `--file-id` の組み合わせも使えます。`--output` を省略した場合は API が返した `filename` をそのまま保存先に使います。`.env` や通常の環境変数で `CHATWORK_DEFAULT_DOWNLOAD_DIR` を指定している場合は、`--output` / `--out-dir` がないときの既定保存先として利用します。`--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。ディレクトリを明示する場合は `--out-dir` も使えます。`--output` と `--out-dir` は同時指定できません。既存ファイルへ上書きする場合は `--force` を付けてください。メッセージ内に `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A`/`all` で選択できます。空 Enter は `All` 扱いです。
 
 サブコマンドは、他とかぶらない prefix であれば短縮指定できます。たとえば `chatwork s` は `chatwork send`、`chatwork d f` は `chatwork download file` として扱います。`download` だけは例外で `chatwork dl` も受け付けます。prefix があいまいな場合はエラーになります。
 

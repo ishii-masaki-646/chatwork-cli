@@ -341,6 +341,8 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
     let mut context = CommandContext::Root;
     let mut expect_value = false;
     let mut parse_options = true;
+    let mut pending_download_default_index = None;
+    let mut download_item_seen = false;
 
     for (index, arg) in args.into_iter().enumerate() {
         if index == 0 {
@@ -386,11 +388,29 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         let resolved = resolve_subcommand_prefix(context, &text)?;
         if let Some(command) = resolved {
             context = next_command_context(context, &command);
+            if matches!(context, CommandContext::Download) {
+                pending_download_default_index = Some(normalized.len() + 1);
+                download_item_seen = false;
+            }
+            if matches!(command.as_str(), "file" | "help")
+                && pending_download_default_index.is_some()
+            {
+                download_item_seen = true;
+            }
             normalized.push(command.into());
             continue;
         }
 
+        if pending_download_default_index.is_some() && !matches!(context, CommandContext::Download) {
+            download_item_seen = true;
+        }
         normalized.push(arg);
+    }
+
+    if let Some(index) = pending_download_default_index {
+        if !download_item_seen {
+            normalized.insert(index, OsString::from("file"));
+        }
     }
 
     Ok(normalized)
@@ -1544,6 +1564,48 @@ mod tests {
                 OsString::from("chatwork"),
                 OsString::from("download"),
                 OsString::from("file"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_inserts_default_download_file_subcommand() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "download".into(),
+            "--chat-url".into(),
+            "https://www.chatwork.com/#!rid1-2".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("download"),
+                OsString::from("file"),
+                OsString::from("--chat-url"),
+                OsString::from("https://www.chatwork.com/#!rid1-2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_inserts_default_download_file_subcommand_for_dl_alias() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "dl".into(),
+            "https://www.chatwork.com/#!rid1-2".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("download"),
+                OsString::from("file"),
+                OsString::from("https://www.chatwork.com/#!rid1-2"),
             ]
         );
     }
