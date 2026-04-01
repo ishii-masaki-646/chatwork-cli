@@ -65,3 +65,6 @@ msgstr "レスポンスに message_id が含まれていません。"
 
 msgid "Failed to parse message_id from the response."
 msgstr "レスポンスの message_id を最後まで読み取れませんでした。"
+
+msgid "Ambiguous subcommand prefix `{prefix}`: {matches}"
+msgstr "サブコマンドの prefix `{prefix}` があいまいです: {matches}"

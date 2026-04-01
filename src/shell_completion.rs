@@ -11,7 +11,54 @@ pub enum ShellScript {
     Zsh,
 }
 
-const BASH_SCRIPT: &str = r#"_chatwork() {
+const BASH_SCRIPT: &str = r#"_chatwork_resolve_prefix() {
+    local context="$1"
+    local token="$2"
+    local -a candidates matches
+    local candidate
+
+    if [[ "${context}" == "root" && "${token}" == "dl" ]]; then
+        printf '%s\n' "download"
+        return 0
+    fi
+
+    case "${context}" in
+        root)
+            candidates=(get download template send completion help)
+            ;;
+        get)
+            candidates=(me status my-status contacts help)
+            ;;
+        download)
+            candidates=(file help)
+            ;;
+        template)
+            candidates=(list show help)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    for candidate in "${candidates[@]}"; do
+        if [[ "${candidate}" == "${token}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+
+    for candidate in "${candidates[@]}"; do
+        if [[ "${candidate}" == "${token}"* ]]; then
+            matches+=("${candidate}")
+        fi
+    done
+
+    if (( ${#matches[@]} == 1 )); then
+        printf '%s\n' "${matches[0]}"
+    fi
+}
+
+_chatwork() {
     local cur prev
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -26,10 +73,20 @@ const BASH_SCRIPT: &str = r#"_chatwork() {
     local get_subcmd=""
     local template_subcmd=""
     local positional_seen=0
-    local i word
+    local i word resolved context
 
     for ((i=1; i<COMP_CWORD; i++)); do
         word="${COMP_WORDS[i]}"
+        context="${mode}"
+        if [[ -z "${context}" ]]; then
+            context="root"
+        fi
+        if [[ "${word}" != --* && "${word}" != -* && "${word}" != "-" ]]; then
+            resolved="$(_chatwork_resolve_prefix "${context}" "${word}")"
+            if [[ -n "${resolved}" ]]; then
+                word="${resolved}"
+            fi
+        fi
         case "${word}" in
             --config)
                 if (( i + 1 < COMP_CWORD )); then
@@ -216,6 +273,53 @@ complete -F _chatwork chatwork
 
 const ZSH_SCRIPT: &str = r#"#compdef chatwork
 
+_chatwork_resolve_prefix() {
+    local context="$1"
+    local token="$2"
+    local -a candidates matches
+    local candidate
+
+    if [[ "${context}" == "root" && "${token}" == "dl" ]]; then
+        print -r -- "download"
+        return 0
+    fi
+
+    case "${context}" in
+        root)
+            candidates=(get download template send completion help)
+            ;;
+        get)
+            candidates=(me status my-status contacts help)
+            ;;
+        download)
+            candidates=(file help)
+            ;;
+        template)
+            candidates=(list show help)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    for candidate in "${candidates[@]}"; do
+        if [[ "${candidate}" == "${token}" ]]; then
+            print -r -- "${candidate}"
+            return 0
+        fi
+    done
+
+    for candidate in "${candidates[@]}"; do
+        if [[ "${candidate}" == "${token}"* ]]; then
+            matches+=("${candidate}")
+        fi
+    done
+
+    if (( ${#matches[@]} == 1 )); then
+        print -r -- "${matches[1]}"
+    fi
+}
+
 _chatwork_add_described() {
     local -a matches display_strings
     local spec match description
@@ -270,10 +374,20 @@ _chatwork() {
     local get_subcmd=""
     local template_subcmd=""
     local positional_seen=0
-    local i word
+    local i word resolved context
 
     for ((i=2; i<CURRENT; i++)); do
         word="${words[i]}"
+        context="${mode}"
+        if [[ -z "${context}" ]]; then
+            context="root"
+        fi
+        if [[ "${word}" != --* && "${word}" != -* && "${word}" != "-" ]]; then
+            resolved="$(_chatwork_resolve_prefix "${context}" "${word}")"
+            if [[ -n "${resolved}" ]]; then
+                word="${resolved}"
+            fi
+        fi
         case "${word}" in
             --config)
                 if (( i + 1 < CURRENT )); then

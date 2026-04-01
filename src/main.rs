@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::io::Write;
@@ -276,6 +277,15 @@ struct DownloadTag {
     label: String,
 }
 
+#[derive(Clone, Copy)]
+enum CommandContext {
+    Root,
+    Get,
+    Download,
+    Template,
+    Leaf,
+}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -294,7 +304,11 @@ impl CompletionShell {
 
 fn main() -> Result<()> {
     load_dotenv_files()?;
-    let cli = Cli::parse();
+    let args = normalize_cli_args(env::args_os().collect())?;
+    let cli = match Cli::try_parse_from(args) {
+        Ok(cli) => cli,
+        Err(err) => err.exit(),
+    };
 
     match cli.command {
         Commands::Get { command } => {
@@ -316,6 +330,133 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
+    if args.len() <= 1 {
+        return Ok(args);
+    }
+
+    let mut normalized = Vec::with_capacity(args.len());
+    let mut context = CommandContext::Root;
+    let mut expect_value = false;
+    let mut parse_options = true;
+
+    for (index, arg) in args.into_iter().enumerate() {
+        if index == 0 {
+            normalized.push(arg);
+            continue;
+        }
+
+        if !parse_options {
+            normalized.push(arg);
+            continue;
+        }
+
+        let Some(text) = arg.to_str().map(str::to_owned) else {
+            normalized.push(arg);
+            continue;
+        };
+
+        if expect_value {
+            normalized.push(arg);
+            expect_value = false;
+            continue;
+        }
+
+        if text == "--" {
+            normalized.push(arg);
+            parse_options = false;
+            continue;
+        }
+
+        if let Some(long_option) = text.strip_prefix("--") {
+            normalized.push(arg);
+            if !long_option.contains('=') && long_option_takes_value(long_option) {
+                expect_value = true;
+            }
+            continue;
+        }
+
+        if text.starts_with('-') && text != "-" {
+            normalized.push(arg);
+            continue;
+        }
+
+        let resolved = resolve_subcommand_prefix(context, &text)?;
+        if let Some(command) = resolved {
+            context = next_command_context(context, &command);
+            normalized.push(command.into());
+            continue;
+        }
+
+        normalized.push(arg);
+    }
+
+    Ok(normalized)
+}
+
+fn long_option_takes_value(name: &str) -> bool {
+    matches!(
+        name,
+        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "room" | "var"
+    )
+}
+
+fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Option<String>> {
+    if let Some(alias) = resolve_special_subcommand_alias(context, token) {
+        return Ok(Some(alias.to_string()));
+    }
+
+    let candidates = match context {
+        CommandContext::Root => &["get", "download", "template", "send", "completion", "help"][..],
+        CommandContext::Get => &["me", "status", "my-status", "contacts", "help"][..],
+        CommandContext::Download => &["file", "help"][..],
+        CommandContext::Template => &["list", "show", "help"][..],
+        CommandContext::Leaf => &[][..],
+    };
+
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    if let Some(exact) = candidates.iter().find(|candidate| **candidate == token) {
+        return Ok(Some((*exact).to_string()));
+    }
+
+    let matches = candidates
+        .iter()
+        .filter(|candidate| candidate.starts_with(token))
+        .copied()
+        .collect::<Vec<_>>();
+
+    match matches.as_slice() {
+        [] => Ok(None),
+        [matched] => Ok(Some((*matched).to_string())),
+        _ => bail!(
+            "{}",
+            trf(
+                "Ambiguous subcommand prefix `{prefix}`: {matches}",
+                &[("prefix", token), ("matches", &matches.join(", "))],
+            )
+        ),
+    }
+}
+
+fn resolve_special_subcommand_alias(context: CommandContext, token: &str) -> Option<&'static str> {
+    match (context, token) {
+        (CommandContext::Root, "dl") => Some("download"),
+        _ => None,
+    }
+}
+
+fn next_command_context(current: CommandContext, command: &str) -> CommandContext {
+    match (current, command) {
+        (CommandContext::Root, "get") => CommandContext::Get,
+        (CommandContext::Root, "download") => CommandContext::Download,
+        (CommandContext::Root, "template") => CommandContext::Template,
+        _ => CommandContext::Leaf,
+    }
 }
 
 fn load_dotenv_files() -> Result<()> {
@@ -1363,6 +1504,89 @@ mod tests {
             }
             _ => panic!("get my-status command was not parsed"),
         }
+    }
+
+    #[test]
+    fn normalize_cli_args_expands_unique_subcommand_prefixes() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "d".into(),
+            "f".into(),
+            "--chat-url".into(),
+            "https://www.chatwork.com/#!rid1-2".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("download"),
+                OsString::from("file"),
+                OsString::from("--chat-url"),
+                OsString::from("https://www.chatwork.com/#!rid1-2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_expands_special_download_alias() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "dl".into(),
+            "f".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("download"),
+                OsString::from("file"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_expands_nested_subcommand_prefix_after_global_option() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "--config".into(),
+            "config.toml".into(),
+            "g".into(),
+            "s".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("--config"),
+                OsString::from("config.toml"),
+                OsString::from("get"),
+                OsString::from("status"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_rejects_ambiguous_subcommand_prefix() {
+        let err = normalize_cli_args(vec![
+            "chatwork".into(),
+            "g".into(),
+            "m".into(),
+        ])
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            trf(
+                "Ambiguous subcommand prefix `{prefix}`: {matches}",
+                &[("prefix", "m"), ("matches", "me, my-status")],
+            )
+        );
     }
 
     #[test]
