@@ -27,7 +27,7 @@ const BASH_SCRIPT: &str = r#"_chatwork_resolve_prefix() {
             candidates=(get download template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts help)
+            candidates=(me status my-status contacts room message help)
             ;;
         download)
             candidates=(file help)
@@ -99,7 +99,7 @@ _chatwork() {
                     ((i++))
                 fi
                 ;;
-            --chat-url|--output|--out-dir|--room-id|--file-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -136,6 +136,16 @@ _chatwork() {
             contacts)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="contacts"
+                fi
+                ;;
+            room)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="room"
+                fi
+                ;;
+            message)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="message"
                 fi
                 ;;
             file)
@@ -190,7 +200,7 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--room|--var)
+        --room-id|--file-id|--message-id|--room|--var)
             return 0
             ;;
     esac
@@ -217,8 +227,18 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "room" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --chat-url --format --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "message" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --message-id --chat-url --format --config --help" -- "${cur}") )
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "me status my-status contacts --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "me status my-status contacts room message --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -289,7 +309,7 @@ _chatwork_resolve_prefix() {
             candidates=(get download template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts help)
+            candidates=(me status my-status contacts room message help)
             ;;
         download)
             candidates=(file help)
@@ -400,7 +420,7 @@ _chatwork() {
                     ((i++))
                 fi
                 ;;
-            --chat-url|--output|--out-dir|--room-id|--file-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -437,6 +457,16 @@ _chatwork() {
             contacts)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="contacts"
+                fi
+                ;;
+            room)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="room"
+                fi
+                ;;
+            message)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="message"
                 fi
                 ;;
             file)
@@ -497,7 +527,7 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--room|--var)
+        --room-id|--file-id|--message-id|--room|--var)
             return 0
             ;;
     esac
@@ -513,6 +543,33 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "room" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--chat-url\tChatwork ルーム URL を指定する'
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "message" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--message-id\t対象メッセージ ID を指定する'
+            $'--chat-url\tChatwork メッセージ URL を指定する'
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
         local -a opts
         opts=(
@@ -520,6 +577,8 @@ _chatwork() {
             $'status\t未読やタスクの件数を表示する'
             $'my-status\tstatus と同じ内容を表示する'
             $'contacts\tコンタクト一覧を表示する'
+            $'room\tルーム情報を表示する'
+            $'message\tメッセージ情報を表示する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )

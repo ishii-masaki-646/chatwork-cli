@@ -91,6 +91,16 @@ cargo run -- get me --format=plain
 cargo run -- get status
 cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
+cargo run -- get room --room-id 123
+cargo run -- get room 'https://www.chatwork.com/#!rid123'
+cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid123'
+cargo run -- get message --room-id 123 --message-id 456
+cargo run -- get message 'https://www.chatwork.com/#!rid123-456'
+cargo run -- get message --chat-url 'https://www.chatwork.com/#!rid123-456'
+cargo run -- get 'https://www.chatwork.com/#!rid123'
+cargo run -- get 'https://www.chatwork.com/#!rid123-456'
+cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123'
+cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123-456'
 cargo run -- download 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download file 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
@@ -103,7 +113,7 @@ cargo run -- template show follow_up --config ./config/config.example.toml --var
 cargo run -- send follow_up --config ./config/config.example.toml --room 123456 --var to_id=12345 --var topic=見積 --dry-run
 ```
 
-`get me` / `get status` / `get contacts` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。
+`get me` / `get status` / `get contacts` / `get room` / `get message` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。`get` の直後または `--chat-url` で Chatwork URL を渡した場合は、`#!rid<room_id>` なら `get room`、`#!rid<room_id>-<message_id>` なら `get message` へ自動で振り分けます。`get room` / `get message` でも `--chat-url` と位置引数 `[CHAT_URL]` の両方を受け付けますが、同時指定はできません。
 
 `download` は、item を省略した場合に暗黙的に `download file` として扱います。`--chat-url` または位置引数で Chatwork のメッセージ URL を渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は `--room-id` と `--file-id` の組み合わせも使えます。`--output` を省略した場合は API が返した `filename` をそのまま保存先に使います。`.env` や通常の環境変数で `CHATWORK_DEFAULT_DOWNLOAD_DIR` を指定している場合は、`--output` / `--out-dir` がないときの既定保存先として利用します。`--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。ディレクトリを明示する場合は `--out-dir` も使えます。`--output` と `--out-dir` は同時指定できません。既存ファイルへ上書きする場合は `--force` を付けてください。メッセージ内に `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A`/`all` で選択できます。空 Enter は `All` 扱いです。
 

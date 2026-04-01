@@ -72,6 +72,24 @@ msgstr "サブコマンドの prefix `{prefix}` があいまいです: {matches}
 msgid "The response does not contain download_url."
 msgstr "レスポンスに download_url が含まれていません。"
 
+msgid "Specify the room URL either as an argument or with --chat-url, not both."
+msgstr "ルーム URL は位置引数または --chat-url のどちらか一方だけを指定してください。"
+
+msgid "Specify either a room URL or --room-id, not both."
+msgstr "ルーム URL か --room-id のどちらか一方だけを指定してください。"
+
+msgid "Specify either a room URL or --room-id."
+msgstr "ルーム URL か --room-id を指定してください。"
+
+msgid "Specify the message URL either as an argument or with --chat-url, not both."
+msgstr "メッセージ URL は位置引数または --chat-url のどちらか一方だけを指定してください。"
+
+msgid "Specify both --room-id and --message-id."
+msgstr "--room-id と --message-id は両方指定してください。"
+
+msgid "Specify either a message URL or the pair of --room-id and --message-id."
+msgstr "メッセージ URL か、--room-id と --message-id の組み合わせのどちらかを指定してください。"
+
 msgid "Specify the chat URL either as an argument or with --chat-url, not both."
 msgstr "チャット URL は位置引数または --chat-url のどちらか一方だけを指定してください。"
 
@@ -81,8 +99,8 @@ msgstr "--room-id と --file-id は両方指定してください。"
 msgid "Specify either --chat-url or the pair of --room-id and --file-id."
 msgstr "--chat-url か、--room-id と --file-id の組み合わせのどちらかを指定してください。"
 
-msgid "The URL must contain `#!rid<room_id>-<message_id>`."
-msgstr "URL には `#!rid<room_id>-<message_id>` を含めてください。"
+msgid "The URL must contain `#!rid<room_id>` or `#!rid<room_id>-<message_id>`."
+msgstr "URL には `#!rid<room_id>` または `#!rid<room_id>-<message_id>` を含めてください。"
 
 msgid "Failed to parse room_id from chat URL."
 msgstr "チャット URL から room_id を解析できませんでした。"
@@ -182,6 +200,9 @@ msgstr "不明なサブコマンドです。"
 
 msgid "A subcommand is required."
 msgstr "サブコマンドを指定してください。"
+
+msgid "A subcommand or URL is required."
+msgstr "サブコマンドまたは URL を指定してください。"
 
 msgid "A command is required."
 msgstr "コマンドを指定してください。"

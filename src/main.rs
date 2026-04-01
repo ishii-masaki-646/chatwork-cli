@@ -44,6 +44,10 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// 情報を取得する
+    #[command(
+        override_usage = "chatwork get [OPTIONS] <COMMAND>\n       chatwork g [OPTIONS] <COMMAND>\n       chatwork get [CHAT_URL]\n       chatwork g [CHAT_URL]\n       chatwork get --chat-url <URL>\n       chatwork g --chat-url <URL>",
+        after_help = "Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。"
+    )]
     Get {
         #[command(subcommand)]
         command: GetCommand,
@@ -83,6 +87,10 @@ enum GetCommand {
     Status(GetOutputArgs),
     /// コンタクト一覧を表示する
     Contacts(GetOutputArgs),
+    /// ルーム情報を表示する
+    Room(GetRoomArgs),
+    /// メッセージ情報を表示する
+    Message(GetMessageArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -96,6 +104,46 @@ struct GetOutputArgs {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = GetFormat::Json)]
     format: GetFormat,
+}
+
+#[derive(Debug, Args)]
+struct GetRoomArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// Chatwork ルーム URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork ルーム URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct GetMessageArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// メッセージ ID
+    #[arg(long, value_name = "MESSAGE_ID")]
+    message_id: Option<u64>,
+
+    /// Chatwork メッセージ URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork メッセージ URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -292,6 +340,8 @@ enum CommandContext {
 enum UsageContext {
     Root,
     Get,
+    GetRoom,
+    GetMessage,
     DownloadFile,
     Template,
     TemplateShow,
@@ -442,14 +492,18 @@ fn infer_usage_context(args: &[OsString]) -> UsageContext {
         }
 
         match context {
-            CommandContext::Root => match text {
+        CommandContext::Root => match text {
                 "send" => return UsageContext::Send,
                 "download" => return UsageContext::DownloadFile,
                 "get" => context = CommandContext::Get,
                 "template" => context = CommandContext::Template,
                 _ => return UsageContext::Root,
             },
-            CommandContext::Get => return UsageContext::Get,
+            CommandContext::Get => match text {
+                "room" => return UsageContext::GetRoom,
+                "message" => return UsageContext::GetMessage,
+                _ => return UsageContext::Get,
+            },
             CommandContext::Template => match text {
                 "show" => return UsageContext::TemplateShow,
                 _ => return UsageContext::Template,
@@ -477,6 +531,7 @@ fn translate_clap_error(err: &clap::Error, context: UsageContext) -> String {
         ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::MissingSubcommand => {
             match context {
                 UsageContext::Root => tr("A command is required."),
+                UsageContext::Get => tr("A subcommand or URL is required."),
                 _ => tr("A subcommand is required."),
             }
         }
@@ -582,17 +637,52 @@ Options:
   -V, --version        バージョンを表示する"#,
         UsageContext::Get => r#"Usage: chatwork get [OPTIONS] <COMMAND>
        chatwork g [OPTIONS] <COMMAND>
+       chatwork get [CHAT_URL]
+       chatwork g [CHAT_URL]
+       chatwork get --chat-url <URL>
+       chatwork g --chat-url <URL>
 
 Commands:
   me          自分のアカウント情報を表示する
   status      未読やタスクの件数を表示する
   my-status   未読やタスクの件数を表示する
   contacts    コンタクト一覧を表示する
+  room        ルーム情報を表示する
+  message     メッセージ情報を表示する
   help        このメッセージまたは指定したサブコマンドのヘルプを表示する
 
 Options:
+      --chat-url <URL>  Chatwork URL を指定する
       --config <PATH>  設定ファイルのパス
-  -h, --help           ヘルプを表示する"#,
+  -h, --help           ヘルプを表示する
+
+Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。"#,
+        UsageContext::GetRoom => r#"Usage: chatwork get room [OPTIONS] [CHAT_URL]
+       chatwork g room [OPTIONS] [CHAT_URL]
+       chatwork g r [OPTIONS] [CHAT_URL]
+
+Arguments:
+  [CHAT_URL]  Chatwork ルーム URL
+
+Options:
+      --room-id <ROOM_ID>  ルーム ID
+      --chat-url <URL>     Chatwork ルーム URL
+      --format <FORMAT>    出力形式
+      --config <PATH>      設定ファイルのパス
+  -h, --help               ヘルプを表示する"#,
+        UsageContext::GetMessage => r#"Usage: chatwork get message [OPTIONS] [CHAT_URL]
+       chatwork g message [OPTIONS] [CHAT_URL]
+
+Arguments:
+  [CHAT_URL]  Chatwork メッセージ URL
+
+Options:
+      --room-id <ROOM_ID>        ルーム ID
+      --message-id <MESSAGE_ID>  メッセージ ID
+      --chat-url <URL>           Chatwork メッセージ URL
+      --format <FORMAT>          出力形式
+      --config <PATH>            設定ファイルのパス
+  -h, --help                     ヘルプを表示する"#,
         UsageContext::DownloadFile => r#"Usage: chatwork download file [OPTIONS] [CHAT_URL]
        chatwork download f [OPTIONS] [CHAT_URL]
        chatwork download [OPTIONS] [CHAT_URL]
@@ -663,6 +753,7 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
     let mut parse_options = true;
     let mut pending_download_default_index = None;
     let mut download_item_seen = false;
+    let mut pending_get_chat_url_insert_index = None;
 
     for (index, arg) in args.into_iter().enumerate() {
         if index == 0 {
@@ -681,6 +772,12 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         };
 
         if expect_value {
+            if let Some(insert_index) = pending_get_chat_url_insert_index.take() {
+                if let Some(target) = infer_get_target_from_url(&text) {
+                    context = CommandContext::Leaf;
+                    normalized.insert(insert_index, OsString::from(target));
+                }
+            }
             normalized.push(arg);
             expect_value = false;
             continue;
@@ -693,6 +790,18 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         }
 
         if let Some(long_option) = text.strip_prefix("--") {
+            if matches!(context, CommandContext::Get)
+                && (long_option == "chat-url" || long_option.starts_with("chat-url="))
+            {
+                if let Some(value) = long_option.strip_prefix("chat-url=") {
+                    if let Some(target) = infer_get_target_from_url(value) {
+                        context = CommandContext::Leaf;
+                        normalized.push(OsString::from(target));
+                    }
+                } else {
+                    pending_get_chat_url_insert_index = Some(normalized.len());
+                }
+            }
             normalized.push(arg);
             if !long_option.contains('=') && long_option_takes_value(long_option) {
                 expect_value = true;
@@ -703,6 +812,15 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         if text.starts_with('-') && text != "-" {
             normalized.push(arg);
             continue;
+        }
+
+        if matches!(context, CommandContext::Get) {
+            if let Some(target) = infer_get_target_from_url(&text) {
+                context = CommandContext::Leaf;
+                normalized.push(OsString::from(target));
+                normalized.push(arg);
+                continue;
+            }
         }
 
         let resolved = resolve_subcommand_prefix(context, &text)?;
@@ -739,7 +857,7 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
 fn long_option_takes_value(name: &str) -> bool {
     matches!(
         name,
-        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "room" | "var"
+        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "message-id" | "room" | "var"
     )
 }
 
@@ -750,7 +868,7 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
 
     let candidates = match context {
         CommandContext::Root => &["get", "download", "template", "send", "completion", "help"][..],
-        CommandContext::Get => &["me", "status", "my-status", "contacts", "help"][..],
+        CommandContext::Get => &["me", "status", "my-status", "contacts", "room", "message", "help"][..],
         CommandContext::Download => &["file", "help"][..],
         CommandContext::Template => &["list", "show", "help"][..],
         CommandContext::Leaf => &[][..],
@@ -780,6 +898,14 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
                 &[("prefix", token), ("matches", &matches.join(", "))],
             ),
         )),
+    }
+}
+
+fn infer_get_target_from_url(token: &str) -> Option<&'static str> {
+    match parse_chatwork_url_parts(token) {
+        Some((_, Some(_))) => Some("message"),
+        Some((_, None)) => Some("room"),
+        None => None,
     }
 }
 
@@ -850,6 +976,18 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
             let contacts = get_contacts(DEFAULT_BASE_URL, &token)?;
             print_contacts(&contacts, args.format)?;
         }
+        GetCommand::Room(args) => {
+            let token = load_api_token()?;
+            let room_id = resolve_get_room_id(&args)?;
+            let room = get_room(DEFAULT_BASE_URL, &token, room_id)?;
+            print_value(&room, args.output.format)?;
+        }
+        GetCommand::Message(args) => {
+            let token = load_api_token()?;
+            let (room_id, message_id) = resolve_get_message_ids(&args)?;
+            let message = get_room_message_json(DEFAULT_BASE_URL, &token, room_id, message_id)?;
+            print_value(&message, args.output.format)?;
+        }
     }
 
     Ok(())
@@ -906,7 +1044,7 @@ fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) 
             Ok(vec![get_room_file(DEFAULT_BASE_URL, token, room_id, file_id, true)?])
         }
         (None, None, Some(chat_url)) => {
-            let (room_id, message_id) = parse_chatwork_message_url(chat_url)?;
+            let (room_id, message_id) = parse_chatwork_message_url(chat_url, UsageContext::DownloadFile)?;
             let message = get_room_message(base_url, token, room_id, message_id)?;
             let tags = extract_download_tags(&message.body)?;
             let selected_tags = select_download_tags(&tags)?;
@@ -1087,6 +1225,14 @@ fn get_room_message(base_url: &str, token: &str, room_id: u64, message_id: u64) 
     get_api_json(base_url, token, &format!("/rooms/{room_id}/messages/{message_id}"))
 }
 
+fn get_room_message_json(base_url: &str, token: &str, room_id: u64, message_id: u64) -> Result<serde_json::Value> {
+    get_api_json(base_url, token, &format!("/rooms/{room_id}/messages/{message_id}"))
+}
+
+fn get_room(base_url: &str, token: &str, room_id: u64) -> Result<serde_json::Value> {
+    get_api_json(base_url, token, &format!("/rooms/{room_id}"))
+}
+
 fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
     get_api_json(base_url, token, "/me")
 }
@@ -1099,31 +1245,95 @@ fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
     get_api_json(base_url, token, "/contacts")
 }
 
-fn parse_chatwork_message_url(url: &str) -> Result<(u64, u64)> {
-    let marker = "#!rid";
-    let start = url
-        .find(marker)
-        .ok_or_else(|| usage_error(
-            UsageContext::DownloadFile,
-            tr("The URL must contain `#!rid<room_id>-<message_id>`."),
-        ))?;
-    let rest = &url[start + marker.len()..];
-    let (room_text, tail) = split_leading_digits(rest)
-        .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Failed to parse room_id from chat URL.")))?;
+fn resolve_get_room_id(args: &GetRoomArgs) -> Result<u64> {
+    if args.chat_url.is_some() && args.chat_url_arg.is_some() {
+        return Err(usage_error(
+            UsageContext::GetRoom,
+            tr("Specify the room URL either as an argument or with --chat-url, not both."),
+        ));
+    }
 
-    let message_text = tail
-        .strip_prefix('-')
-        .and_then(|tail| split_leading_digits(tail).map(|(digits, _)| digits))
-        .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Failed to parse message_id from chat URL.")))?;
+    let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
 
-    let room_id = room_text
-        .parse::<u64>()
-        .map_err(|_| usage_error(UsageContext::DownloadFile, tr("Failed to parse room_id from chat URL.")))?;
-    let message_id = message_text
-        .parse::<u64>()
-        .map_err(|_| usage_error(UsageContext::DownloadFile, tr("Failed to parse message_id from chat URL.")))?;
+    match (args.room_id, chat_url) {
+        (Some(room_id), None) => Ok(room_id),
+        (None, Some(chat_url)) => parse_chatwork_room_url(chat_url, UsageContext::GetRoom),
+        (Some(_), Some(_)) => Err(usage_error(
+            UsageContext::GetRoom,
+            tr("Specify either a room URL or --room-id, not both."),
+        )),
+        (None, None) => Err(usage_error(
+            UsageContext::GetRoom,
+            tr("Specify either a room URL or --room-id."),
+        )),
+    }
+}
+
+fn resolve_get_message_ids(args: &GetMessageArgs) -> Result<(u64, u64)> {
+    if args.chat_url.is_some() && args.chat_url_arg.is_some() {
+        return Err(usage_error(
+            UsageContext::GetMessage,
+            tr("Specify the message URL either as an argument or with --chat-url, not both."),
+        ));
+    }
+
+    let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
+
+    match (args.room_id, args.message_id, chat_url) {
+        (Some(room_id), Some(message_id), None) => Ok((room_id, message_id)),
+        (None, None, Some(chat_url)) => parse_chatwork_message_url(chat_url, UsageContext::GetMessage),
+        (Some(_), None, None) | (None, Some(_), None) => Err(usage_error(
+            UsageContext::GetMessage,
+            tr("Specify both --room-id and --message-id."),
+        )),
+        (Some(_), Some(_), Some(_)) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => Err(usage_error(
+            UsageContext::GetMessage,
+            tr("Specify either a message URL or the pair of --room-id and --message-id."),
+        )),
+        (None, None, None) => Err(usage_error(
+            UsageContext::GetMessage,
+            tr("Specify either a message URL or the pair of --room-id and --message-id."),
+        )),
+    }
+}
+
+fn parse_chatwork_room_url(url: &str, context: UsageContext) -> Result<u64> {
+    let (room_id, _) = parse_chatwork_url(url, context)?;
+    Ok(room_id)
+}
+
+fn parse_chatwork_message_url(url: &str, context: UsageContext) -> Result<(u64, u64)> {
+    let (room_id, message_id) = parse_chatwork_url(url, context)?;
+    let message_id = message_id
+        .ok_or_else(|| usage_error(context, tr("Failed to parse message_id from chat URL.")))?;
+    Ok((room_id, message_id))
+}
+
+fn parse_chatwork_url(url: &str, context: UsageContext) -> Result<(u64, Option<u64>)> {
+    let (room_id, message_id) = parse_chatwork_url_parts(url).ok_or_else(|| usage_error(
+        context,
+        tr("The URL must contain `#!rid<room_id>` or `#!rid<room_id>-<message_id>`."),
+    ))?;
 
     Ok((room_id, message_id))
+}
+
+fn parse_chatwork_url_parts(url: &str) -> Option<(u64, Option<u64>)> {
+    let marker = "#!rid";
+    let start = url.find(marker)?;
+    let rest = &url[start + marker.len()..];
+    let (room_text, tail) = split_leading_digits(rest)?;
+    let room_id = room_text.parse::<u64>().ok()?;
+
+    let message_id = match tail.strip_prefix('-') {
+        Some(message_tail) => {
+            let (message_text, _) = split_leading_digits(message_tail)?;
+            Some(message_text.parse::<u64>().ok()?)
+        }
+        None => None,
+    };
+
+    Some((room_id, message_id))
 }
 
 fn split_leading_digits(text: &str) -> Option<(&str, &str)> {
@@ -1507,6 +1717,43 @@ fn print_contacts(contacts: &[ContactResponse], format: GetFormat) -> Result<()>
     Ok(())
 }
 
+fn print_value(value: &serde_json::Value, format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json | GetFormat::JsonMinify => print_json(value, format)?,
+        GetFormat::Plain => print_value_plain(value)?,
+    }
+
+    Ok(())
+}
+
+fn print_value_plain(value: &serde_json::Value) -> Result<()> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                if value.is_null() {
+                    continue;
+                }
+                println!("{key}={}", plain_value_text(value)?);
+            }
+        }
+        _ => println!("{}", plain_value_text(value)?),
+    }
+
+    Ok(())
+}
+
+fn plain_value_text(value: &serde_json::Value) -> Result<String> {
+    match value {
+        serde_json::Value::Null => Ok(String::new()),
+        serde_json::Value::Bool(value) => Ok(value.to_string()),
+        serde_json::Value::Number(value) => Ok(value.to_string()),
+        serde_json::Value::String(value) => Ok(value.clone()),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            serde_json::to_string(value).context(tr("Failed to serialize output as JSON."))
+        }
+    }
+}
+
 fn get_template<'a>(config: &'a Config, name: &str, context: UsageContext) -> Result<&'a Template> {
     config
         .templates
@@ -1870,6 +2117,53 @@ mod tests {
     }
 
     #[test]
+    fn get_room_command_parses_chat_url_as_positional_argument() {
+        let cli = Cli::try_parse_from(["chatwork", "get", "room", "https://www.chatwork.com/#!rid32293227"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Room(args) => {
+                    assert_eq!(args.room_id, None);
+                    assert_eq!(args.chat_url, None);
+                    assert_eq!(
+                        args.chat_url_arg.as_deref(),
+                        Some("https://www.chatwork.com/#!rid32293227")
+                    );
+                }
+                _ => panic!("get room command was not parsed"),
+            },
+            _ => panic!("get room command was not parsed"),
+        }
+    }
+
+    #[test]
+    fn get_message_command_parses_chat_url_as_positional_argument() {
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "get",
+            "message",
+            "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Message(args) => {
+                    assert_eq!(args.room_id, None);
+                    assert_eq!(args.message_id, None);
+                    assert_eq!(args.chat_url, None);
+                    assert_eq!(
+                        args.chat_url_arg.as_deref(),
+                        Some("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+                    );
+                }
+                _ => panic!("get message command was not parsed"),
+            },
+            _ => panic!("get message command was not parsed"),
+        }
+    }
+
+    #[test]
     fn get_my_status_alias_parses_without_config() {
         let cli = Cli::try_parse_from(["chatwork", "get", "my-status"]).unwrap();
 
@@ -1900,6 +2194,46 @@ mod tests {
                 OsString::from("file"),
                 OsString::from("--chat-url"),
                 OsString::from("https://www.chatwork.com/#!rid1-2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_routes_get_room_url_to_room_subcommand() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "get".into(),
+            "https://www.chatwork.com/#!rid32293227".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("get"),
+                OsString::from("room"),
+                OsString::from("https://www.chatwork.com/#!rid32293227"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_routes_get_message_url_to_message_subcommand() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "get".into(),
+            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("get"),
+                OsString::from("message"),
+                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
             ]
         );
     }
@@ -2001,7 +2335,7 @@ mod tests {
             err.to_string(),
             trf(
                 "Ambiguous subcommand prefix `{prefix}`: {matches}",
-                &[("prefix", "m"), ("matches", "me, my-status")],
+                &[("prefix", "m"), ("matches", "me, my-status, message")],
             )
         );
     }
@@ -2146,10 +2480,23 @@ mod tests {
     #[test]
     fn parse_chatwork_message_url_reads_room_and_message_ids() {
         let (room_id, message_id) =
-            parse_chatwork_message_url("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+            parse_chatwork_message_url(
+                "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+                UsageContext::GetMessage,
+            )
                 .unwrap();
         assert_eq!(room_id, 32293227);
         assert_eq!(message_id, 2090707858361688064);
+    }
+
+    #[test]
+    fn parse_chatwork_room_url_reads_room_id() {
+        let room_id = parse_chatwork_room_url(
+            "https://www.chatwork.com/#!rid32293227",
+            UsageContext::GetRoom,
+        )
+        .unwrap();
+        assert_eq!(room_id, 32293227);
     }
 
     #[test]
@@ -2480,6 +2827,15 @@ body_file = "invalid.txt"
         assert_eq!(
             translate_clap_error(&err, UsageContext::DownloadFile),
             trf("Invalid value for {arg}: {value}", &[("arg", "--room-id <ROOM_ID>"), ("value", "abc")])
+        );
+    }
+
+    #[test]
+    fn translate_clap_error_localizes_missing_get_subcommand_or_url() {
+        let err = Cli::try_parse_from(["chatwork", "get"]).unwrap_err();
+        assert_eq!(
+            translate_clap_error(&err, UsageContext::Get),
+            tr("A subcommand or URL is required.")
         );
     }
 
