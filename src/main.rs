@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
 use dotenvy::{dotenv, from_path};
@@ -290,7 +291,9 @@ enum CommandContext {
 #[derive(Clone, Copy, Debug)]
 enum UsageContext {
     Root,
+    Get,
     DownloadFile,
+    Template,
     TemplateShow,
     Send,
 }
@@ -331,9 +334,9 @@ fn main() -> Result<()> {
         Ok(args) => args,
         Err(err) => return handle_cli_error(err),
     };
-    let cli = match Cli::try_parse_from(args) {
+    let cli = match Cli::try_parse_from(args.clone()) {
         Ok(cli) => cli,
-        Err(err) => err.exit(),
+        Err(err) => return handle_clap_parse_error(err, &args),
     };
 
     let result = match cli.command {
@@ -378,6 +381,19 @@ fn handle_cli_error(err: anyhow::Error) -> Result<()> {
     Err(err)
 }
 
+fn handle_clap_parse_error(err: clap::Error, args: &[OsString]) -> Result<()> {
+    let context = infer_usage_context(args);
+    match err.kind() {
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => err.exit(),
+        _ => {
+            eprintln!("Error: {}", translate_clap_error(&err, context));
+            eprintln!();
+            eprintln!("{}", help_text(context));
+            std::process::exit(2);
+        }
+    }
+}
+
 fn usage_error(context: UsageContext, message: impl Into<String>) -> anyhow::Error {
     UsageError {
         context,
@@ -386,9 +402,171 @@ fn usage_error(context: UsageContext, message: impl Into<String>) -> anyhow::Err
     .into()
 }
 
+fn infer_usage_context(args: &[OsString]) -> UsageContext {
+    let mut context = CommandContext::Root;
+    let mut expect_value = false;
+    let mut parse_options = true;
+
+    for (index, arg) in args.iter().enumerate() {
+        if index == 0 {
+            continue;
+        }
+
+        if !parse_options {
+            break;
+        }
+
+        let Some(text) = arg.to_str() else {
+            continue;
+        };
+
+        if expect_value {
+            expect_value = false;
+            continue;
+        }
+
+        if text == "--" {
+            parse_options = false;
+            continue;
+        }
+
+        if let Some(long_option) = text.strip_prefix("--") {
+            if !long_option.contains('=') && long_option_takes_value(long_option) {
+                expect_value = true;
+            }
+            continue;
+        }
+
+        if text.starts_with('-') && text != "-" {
+            continue;
+        }
+
+        match context {
+            CommandContext::Root => match text {
+                "send" => return UsageContext::Send,
+                "download" => return UsageContext::DownloadFile,
+                "get" => context = CommandContext::Get,
+                "template" => context = CommandContext::Template,
+                _ => return UsageContext::Root,
+            },
+            CommandContext::Get => return UsageContext::Get,
+            CommandContext::Template => match text {
+                "show" => return UsageContext::TemplateShow,
+                _ => return UsageContext::Template,
+            },
+            _ => return UsageContext::Root,
+        }
+    }
+
+    match context {
+        CommandContext::Get => UsageContext::Get,
+        CommandContext::Template => UsageContext::Template,
+        _ => UsageContext::Root,
+    }
+}
+
+fn translate_clap_error(err: &clap::Error, context: UsageContext) -> String {
+    match err.kind() {
+        ErrorKind::MissingRequiredArgument => {
+            if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
+                trf("Required argument is missing: {arg}", &[("arg", &arg)])
+            } else {
+                tr("Required argument is missing.")
+            }
+        }
+        ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::MissingSubcommand => {
+            match context {
+                UsageContext::Root => tr("A command is required."),
+                _ => tr("A subcommand is required."),
+            }
+        }
+        ErrorKind::UnknownArgument => {
+            if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
+                trf("Unknown argument: {arg}", &[("arg", &arg)])
+            } else {
+                tr("Unknown argument.")
+            }
+        }
+        ErrorKind::TooFewValues => {
+            if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
+                trf("A value is required for {arg}.", &[("arg", &arg)])
+            } else {
+                tr("A value is required.")
+            }
+        }
+        ErrorKind::InvalidValue | ErrorKind::ValueValidation => {
+            let arg = clap_context_string(err, ContextKind::InvalidArg);
+            let value = clap_context_string(err, ContextKind::InvalidValue);
+            match (arg, value) {
+                (Some(arg), Some(value)) if value.trim().is_empty() => {
+                    trf("A value is required for {arg}.", &[("arg", &arg)])
+                }
+                (Some(arg), Some(value)) => trf(
+                    "Invalid value for {arg}: {value}",
+                    &[("arg", &arg), ("value", &value)],
+                ),
+                (Some(arg), None) => trf("Invalid value for {arg}.", &[("arg", &arg)]),
+                _ => tr("Invalid value."),
+            }
+        }
+        ErrorKind::WrongNumberOfValues => {
+            if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
+                trf("The number of values is invalid for {arg}.", &[("arg", &arg)])
+            } else {
+                tr("The number of values is invalid.")
+            }
+        }
+        ErrorKind::NoEquals => {
+            if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
+                trf("Use = when specifying a value for {arg}.", &[("arg", &arg)])
+            } else {
+                tr("Use = when specifying the value.")
+            }
+        }
+        ErrorKind::InvalidSubcommand => {
+            if let Some(subcommand) = clap_context_string(err, ContextKind::InvalidSubcommand) {
+                trf("Unknown subcommand: {subcommand}", &[("subcommand", &subcommand)])
+            } else {
+                tr("Unknown subcommand.")
+            }
+        }
+        ErrorKind::ArgumentConflict => {
+            let arg = clap_context_string(err, ContextKind::InvalidArg);
+            let other = clap_context_string(err, ContextKind::PriorArg);
+            match (arg, other) {
+                (Some(arg), Some(other)) => trf(
+                    "Argument {arg} cannot be used together with {other}.",
+                    &[("arg", &arg), ("other", &other)],
+                ),
+                _ => tr("The specified arguments cannot be used together."),
+            }
+        }
+        _ => err.to_string().trim().to_string(),
+    }
+}
+
+fn clap_context_string(err: &clap::Error, kind: ContextKind) -> Option<String> {
+    match err.get(kind) {
+        Some(ContextValue::String(value)) => Some(value.clone()),
+        Some(ContextValue::Strings(values)) => Some(values.join(", ")),
+        Some(ContextValue::StyledStr(value)) => Some(value.to_string()),
+        Some(ContextValue::StyledStrs(values)) => Some(
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        Some(ContextValue::Number(value)) => Some(value.to_string()),
+        Some(ContextValue::Bool(value)) => Some(value.to_string()),
+        Some(ContextValue::None) | Some(_) | None => None,
+    }
+}
+
 fn help_text(context: UsageContext) -> &'static str {
     match context {
         UsageContext::Root => r#"Usage: chatwork [OPTIONS] <COMMAND>
+       chatwork [OPTIONS] <PREFIX_COMMAND>
 
 Commands:
   get         情報を取得する
@@ -396,13 +574,34 @@ Commands:
   template    テンプレートを扱う
   send        テンプレートを送信する
   completion  シェル補完スクリプトを出力する
-  help        Print this message or the help of the given subcommand(s)
+  help        このメッセージまたは指定したサブコマンドのヘルプを表示する
 
 Options:
       --config <PATH>  設定ファイルのパス
-  -h, --help           Print help
-  -V, --version        Print version"#,
+  -h, --help           ヘルプを表示する
+  -V, --version        バージョンを表示する"#,
+        UsageContext::Get => r#"Usage: chatwork get [OPTIONS] <COMMAND>
+       chatwork g [OPTIONS] <COMMAND>
+
+Commands:
+  me          自分のアカウント情報を表示する
+  status      未読やタスクの件数を表示する
+  my-status   未読やタスクの件数を表示する
+  contacts    コンタクト一覧を表示する
+  help        このメッセージまたは指定したサブコマンドのヘルプを表示する
+
+Options:
+      --config <PATH>  設定ファイルのパス
+  -h, --help           ヘルプを表示する"#,
         UsageContext::DownloadFile => r#"Usage: chatwork download file [OPTIONS] [CHAT_URL]
+       chatwork download f [OPTIONS] [CHAT_URL]
+       chatwork download [OPTIONS] [CHAT_URL]
+       chatwork dl file [OPTIONS] [CHAT_URL]
+       chatwork dl f [OPTIONS] [CHAT_URL]
+       chatwork dl [OPTIONS] [CHAT_URL]
+       chatwork d file [OPTIONS] [CHAT_URL]
+       chatwork d f [OPTIONS] [CHAT_URL]
+       chatwork d [OPTIONS] [CHAT_URL]
 
 Arguments:
   [CHAT_URL]  Chatwork メッセージ URL
@@ -415,8 +614,20 @@ Options:
       --output <PATH>      保存先ファイルパス
       --out-dir <DIR>      保存先ディレクトリ
       --force              既存ファイルを上書きする
-  -h, --help               Print help"#,
+  -h, --help               ヘルプを表示する"#,
+        UsageContext::Template => r#"Usage: chatwork template [OPTIONS] <COMMAND>
+       chatwork t [OPTIONS] <COMMAND>
+
+Commands:
+  list  テンプレート一覧を表示する
+  show  テンプレート本文を表示する
+  help  このメッセージまたは指定したサブコマンドのヘルプを表示する
+
+Options:
+      --config <PATH>  設定ファイルのパス
+  -h, --help           ヘルプを表示する"#,
         UsageContext::TemplateShow => r#"Usage: chatwork template show [OPTIONS] <NAME>
+       chatwork t s [OPTIONS] <NAME>
 
 Arguments:
   <NAME>  テンプレート名
@@ -424,8 +635,9 @@ Arguments:
 Options:
       --config <PATH>    設定ファイルのパス
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
-  -h, --help             Print help"#,
+  -h, --help             ヘルプを表示する"#,
         UsageContext::Send => r#"Usage: chatwork send [OPTIONS] <NAME>
+       chatwork s [OPTIONS] <NAME>
 
 Arguments:
   <NAME>  テンプレート名
@@ -436,7 +648,7 @@ Options:
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
       --self-unread      自分を未読にする
       --dry-run          実際には送らず本文だけ表示する
-  -h, --help             Print help"#,
+  -h, --help             ヘルプを表示する"#,
     }
 }
 
@@ -1564,7 +1776,13 @@ fn extract_message_id(response_body: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn render_template_replaces_placeholders() {
@@ -1819,9 +2037,15 @@ mod tests {
 
     #[test]
     fn resolve_download_output_path_uses_filename_by_default() {
+        let _guard = env_lock();
+        let previous_default_download_dir = env::var_os(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
         env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
         let path = resolve_download_output_path("report.txt", None, None);
         assert_eq!(path, Path::new("report.txt"));
+        match previous_default_download_dir {
+            Some(value) => env::set_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME, value),
+            None => env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME),
+        }
     }
 
     #[test]
@@ -1898,6 +2122,10 @@ mod tests {
 
     #[test]
     fn resolve_download_output_path_uses_default_download_dir_from_env() {
+        let _guard = env_lock();
+        let previous_default_download_dir = env::var_os(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
+        let previous_home = env::var_os("HOME");
+
         env::set_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME, "~/Downloads");
         env::set_var("HOME", "/tmp/chatwork-cli-home");
 
@@ -1905,7 +2133,14 @@ mod tests {
 
         assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
 
-        env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME);
+        match previous_default_download_dir {
+            Some(value) => env::set_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME, value),
+            None => env::remove_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME),
+        }
+        match previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
     }
 
     #[test]
@@ -2067,9 +2302,15 @@ mod tests {
 
     #[test]
     fn resolve_download_output_path_expands_home() {
+        let _guard = env_lock();
+        let previous_home = env::var_os("HOME");
         env::set_var("HOME", "/tmp/chatwork-cli-home");
         let path = resolve_download_output_path("report.txt", Some(Path::new("~/Downloads/report.txt")), None);
         assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+        match previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
     }
 
     #[test]
@@ -2185,6 +2426,61 @@ body_file = "invalid.txt"
             }
             _ => panic!("completion command was not parsed"),
         }
+    }
+
+    #[test]
+    fn help_text_for_download_file_includes_prefix_shortcuts() {
+        let text = help_text(UsageContext::DownloadFile);
+        assert!(text.contains("chatwork download file [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork download f [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork download [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork dl file [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork dl f [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork dl [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork d file [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork d f [OPTIONS] [CHAT_URL]"));
+        assert!(text.contains("chatwork d [OPTIONS] [CHAT_URL]"));
+    }
+
+    #[test]
+    fn help_text_for_send_includes_prefix_shortcut() {
+        let text = help_text(UsageContext::Send);
+        assert!(text.contains("chatwork send [OPTIONS] <NAME>"));
+        assert!(text.contains("chatwork s [OPTIONS] <NAME>"));
+        assert!(text.contains("ヘルプを表示する"));
+    }
+
+    #[test]
+    fn infer_usage_context_detects_send_prefix_command() {
+        let args = vec![OsString::from("chatwork"), OsString::from("send")];
+        assert!(matches!(infer_usage_context(&args), UsageContext::Send));
+    }
+
+    #[test]
+    fn translate_clap_error_localizes_missing_required_argument() {
+        let err = Cli::try_parse_from(["chatwork", "send"]).unwrap_err();
+        assert_eq!(
+            translate_clap_error(&err, UsageContext::Send),
+            trf("Required argument is missing: {arg}", &[("arg", "<NAME>")])
+        );
+    }
+
+    #[test]
+    fn translate_clap_error_localizes_missing_option_value() {
+        let err = Cli::try_parse_from(["chatwork", "--config"]).unwrap_err();
+        assert_eq!(
+            translate_clap_error(&err, UsageContext::Root),
+            trf("A value is required for {arg}.", &[("arg", "--config <PATH>")])
+        );
+    }
+
+    #[test]
+    fn translate_clap_error_localizes_invalid_option_value() {
+        let err = Cli::try_parse_from(["chatwork", "download", "file", "--room-id", "abc"]).unwrap_err();
+        assert_eq!(
+            translate_clap_error(&err, UsageContext::DownloadFile),
+            trf("Invalid value for {arg}: {value}", &[("arg", "--room-id <ROOM_ID>"), ("value", "abc")])
+        );
     }
 
     fn temp_test_dir(name: &str) -> PathBuf {

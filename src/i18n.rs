@@ -66,7 +66,7 @@ fn normalize_locale(value: &str) -> String {
 
     match primary {
         "" => DEFAULT_LOCALE.to_string(),
-        "C" | "POSIX" => "en".to_string(),
+        "C" | "POSIX" => DEFAULT_LOCALE.to_string(),
         _ => primary.to_ascii_lowercase(),
     }
 }
@@ -223,5 +223,11 @@ msgstr "1 行目\n"
 
         assert!(rendered.contains("123"));
         assert!(rendered.contains("456"));
+    }
+
+    #[test]
+    fn normalize_locale_treats_c_locale_as_default_locale() {
+        assert_eq!(normalize_locale("C.UTF-8"), "ja");
+        assert_eq!(normalize_locale("POSIX"), "ja");
     }
 }

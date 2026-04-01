@@ -134,3 +134,60 @@ msgstr ".env ファイルを読み込めませんでした。"
 
 msgid "Failed to parse Chatwork API response JSON."
 msgstr "Chatwork API のレスポンス JSON を解析できませんでした。"
+
+msgid "Required argument is missing: {arg}"
+msgstr "必須の引数が不足しています: {arg}"
+
+msgid "Required argument is missing."
+msgstr "必須の引数が不足しています。"
+
+msgid "Unknown argument: {arg}"
+msgstr "不明な引数です: {arg}"
+
+msgid "Unknown argument."
+msgstr "不明な引数です。"
+
+msgid "A value is required for {arg}."
+msgstr "{arg} には値が必要です。"
+
+msgid "A value is required."
+msgstr "値を指定してください。"
+
+msgid "Invalid value for {arg}: {value}"
+msgstr "{arg} の値が不正です: {value}"
+
+msgid "Invalid value for {arg}."
+msgstr "{arg} の値が不正です。"
+
+msgid "Invalid value."
+msgstr "値が不正です。"
+
+msgid "The number of values is invalid for {arg}."
+msgstr "{arg} に指定された値の数が不正です。"
+
+msgid "The number of values is invalid."
+msgstr "値の数が不正です。"
+
+msgid "Use = when specifying a value for {arg}."
+msgstr "{arg} に値を指定するときは = を使ってください。"
+
+msgid "Use = when specifying the value."
+msgstr "値を指定するときは = を使ってください。"
+
+msgid "Unknown subcommand: {subcommand}"
+msgstr "不明なサブコマンドです: {subcommand}"
+
+msgid "Unknown subcommand."
+msgstr "不明なサブコマンドです。"
+
+msgid "A subcommand is required."
+msgstr "サブコマンドを指定してください。"
+
+msgid "A command is required."
+msgstr "コマンドを指定してください。"
+
+msgid "Argument {arg} cannot be used together with {other}."
+msgstr "{arg} は {other} と同時に使えません。"
+
+msgid "The specified arguments cannot be used together."
+msgstr "指定された引数の組み合わせは使えません。"
