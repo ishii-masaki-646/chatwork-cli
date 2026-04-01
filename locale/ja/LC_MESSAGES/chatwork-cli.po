@@ -68,3 +68,69 @@ msgstr "レスポンスの message_id を最後まで読み取れませんでし
 
 msgid "Ambiguous subcommand prefix `{prefix}`: {matches}"
 msgstr "サブコマンドの prefix `{prefix}` があいまいです: {matches}"
+
+msgid "The response does not contain download_url."
+msgstr "レスポンスに download_url が含まれていません。"
+
+msgid "Specify the chat URL either as an argument or with --chat-url, not both."
+msgstr "チャット URL は位置引数または --chat-url のどちらか一方だけを指定してください。"
+
+msgid "Specify both --room-id and --file-id."
+msgstr "--room-id と --file-id は両方指定してください。"
+
+msgid "Specify either --chat-url or the pair of --room-id and --file-id."
+msgstr "--chat-url か、--room-id と --file-id の組み合わせのどちらかを指定してください。"
+
+msgid "The URL must contain `#!rid<room_id>-<message_id>`."
+msgstr "URL には `#!rid<room_id>-<message_id>` を含めてください。"
+
+msgid "Failed to parse room_id from chat URL."
+msgstr "チャット URL から room_id を解析できませんでした。"
+
+msgid "Failed to parse message_id from chat URL."
+msgstr "チャット URL から message_id を解析できませんでした。"
+
+msgid "Missing closing `]` for download tag."
+msgstr "download タグの閉じ `]` がありません。"
+
+msgid "Failed to parse file_id from download tag: {tag}"
+msgstr "download タグから file_id を解析できませんでした: {tag}"
+
+msgid "Missing closing `[/download]` for download tag."
+msgstr "download タグの閉じ `[/download]` がありません。"
+
+msgid "The message does not contain a download tag."
+msgstr "メッセージに download タグが含まれていません。"
+
+msgid "Multiple download tags were found:"
+msgstr "複数の download タグが見つかりました:"
+
+msgid "Select numbers, ranges, or [A]ll (default: All):"
+msgstr "番号、範囲、または [A]ll を選んでください（既定: All）:"
+
+msgid "Failed to read selection from stdin."
+msgstr "標準入力から選択内容を読み取れませんでした。"
+
+msgid "Invalid selection. Enter numbers, ranges, commas, or A."
+msgstr "選択が不正です。番号、範囲、カンマ区切り、または A を入力してください。"
+
+msgid "Specify either --output or --out-dir, not both."
+msgstr "--output と --out-dir は同時に指定できません。"
+
+msgid "Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path."
+msgstr "複数ファイルをダウンロードする場合は、--out-dir、既存ディレクトリを指定した --output、または出力パス未指定のいずれかを使ってください。"
+
+msgid "Failed to download file from Chatwork."
+msgstr "Chatwork からファイルをダウンロードできませんでした。"
+
+msgid "Failed to read downloaded file body."
+msgstr "ダウンロードしたファイルの内容を読み取れませんでした。"
+
+msgid "Failed to serialize output as JSON."
+msgstr "出力を JSON としてシリアライズできませんでした。"
+
+msgid "Failed to load .env file."
+msgstr ".env ファイルを読み込めませんでした。"
+
+msgid "Failed to parse Chatwork API response JSON."
+msgstr "Chatwork API のレスポンス JSON を解析できませんでした。"

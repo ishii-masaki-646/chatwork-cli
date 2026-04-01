@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
+use std::fmt;
 use std::fs;
 use std::io;
 use std::io::Write;
@@ -286,6 +287,28 @@ enum CommandContext {
     Leaf,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum UsageContext {
+    Root,
+    DownloadFile,
+    TemplateShow,
+    Send,
+}
+
+#[derive(Debug)]
+struct UsageError {
+    context: UsageContext,
+    message: String,
+}
+
+impl fmt::Display for UsageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for UsageError {}
+
 fn default_base_url() -> String {
     DEFAULT_BASE_URL.to_string()
 }
@@ -304,32 +327,117 @@ impl CompletionShell {
 
 fn main() -> Result<()> {
     load_dotenv_files()?;
-    let args = normalize_cli_args(env::args_os().collect())?;
+    let args = match normalize_cli_args(env::args_os().collect()) {
+        Ok(args) => args,
+        Err(err) => return handle_cli_error(err),
+    };
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(err) => err.exit(),
     };
 
-    match cli.command {
+    let result = match cli.command {
         Commands::Get { command } => {
-            handle_get_command(command)?;
+            handle_get_command(command)
         }
         Commands::Download { command } => {
-            handle_download_command(command)?;
+            handle_download_command(command)
         }
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
-            handle_template_command(command, &config)?;
+            handle_template_command(command, &config)
         }
         Commands::Send(args) => {
             let config = load_config_for_cli(cli.config.as_deref())?;
-            handle_send_command(args, &config)?;
+            handle_send_command(args, &config)
         }
-        Commands::Completion(args) => handle_completion_command(args),
-        Commands::CompleteTemplates(args) => handle_complete_templates_command(args, cli.config.as_deref()),
+        Commands::Completion(args) => {
+            handle_completion_command(args);
+            Ok(())
+        }
+        Commands::CompleteTemplates(args) => {
+            handle_complete_templates_command(args, cli.config.as_deref());
+            Ok(())
+        }
+    };
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => handle_cli_error(err),
+    }
+}
+
+fn handle_cli_error(err: anyhow::Error) -> Result<()> {
+    if let Some(usage_error) = err.downcast_ref::<UsageError>() {
+        eprintln!("Error: {}", usage_error.message);
+        eprintln!();
+        eprintln!("{}", help_text(usage_error.context));
+        std::process::exit(2);
     }
 
-    Ok(())
+    Err(err)
+}
+
+fn usage_error(context: UsageContext, message: impl Into<String>) -> anyhow::Error {
+    UsageError {
+        context,
+        message: message.into(),
+    }
+    .into()
+}
+
+fn help_text(context: UsageContext) -> &'static str {
+    match context {
+        UsageContext::Root => r#"Usage: chatwork [OPTIONS] <COMMAND>
+
+Commands:
+  get         情報を取得する
+  download    ファイルをダウンロードする
+  template    テンプレートを扱う
+  send        テンプレートを送信する
+  completion  シェル補完スクリプトを出力する
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  設定ファイルのパス
+  -h, --help           Print help
+  -V, --version        Print version"#,
+        UsageContext::DownloadFile => r#"Usage: chatwork download file [OPTIONS] [CHAT_URL]
+
+Arguments:
+  [CHAT_URL]  Chatwork メッセージ URL
+
+Options:
+      --config <PATH>      設定ファイルのパス
+      --room-id <ROOM_ID>  ルーム ID
+      --file-id <FILE_ID>  ファイル ID
+      --chat-url <URL>     Chatwork メッセージ URL
+      --output <PATH>      保存先ファイルパス
+      --out-dir <DIR>      保存先ディレクトリ
+      --force              既存ファイルを上書きする
+  -h, --help               Print help"#,
+        UsageContext::TemplateShow => r#"Usage: chatwork template show [OPTIONS] <NAME>
+
+Arguments:
+  <NAME>  テンプレート名
+
+Options:
+      --config <PATH>    設定ファイルのパス
+      --var <KEY=VALUE>  差し込み変数。例: --var name=あい
+  -h, --help             Print help"#,
+        UsageContext::Send => r#"Usage: chatwork send [OPTIONS] <NAME>
+
+Arguments:
+  <NAME>  テンプレート名
+
+Options:
+      --config <PATH>    設定ファイルのパス
+      --room <ROOM_ID>   送信先ルーム ID。省略時はテンプレート設定か default_room_id を使う
+      --var <KEY=VALUE>  差し込み変数。例: --var name=あい
+      --self-unread      自分を未読にする
+      --dry-run          実際には送らず本文だけ表示する
+  -h, --help             Print help"#,
+    }
 }
 
 fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
@@ -453,13 +561,13 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
     match matches.as_slice() {
         [] => Ok(None),
         [matched] => Ok(Some((*matched).to_string())),
-        _ => bail!(
-            "{}",
+        _ => Err(usage_error(
+            UsageContext::Root,
             trf(
                 "Ambiguous subcommand prefix `{prefix}`: {matches}",
                 &[("prefix", token), ("matches", &matches.join(", "))],
-            )
-        ),
+            ),
+        )),
     }
 }
 
@@ -573,7 +681,10 @@ fn handle_download_command(command: DownloadCommand) -> Result<()> {
 
 fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) -> Result<Vec<RoomFileResponse>> {
     if args.chat_url.is_some() && args.chat_url_arg.is_some() {
-        bail!("{}", tr("Specify the chat URL either as an argument or with --chat-url, not both."));
+        return Err(usage_error(
+            UsageContext::DownloadFile,
+            tr("Specify the chat URL either as an argument or with --chat-url, not both."),
+        ));
     }
 
     let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
@@ -593,13 +704,14 @@ fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) 
                 .map(|tag| get_room_file(DEFAULT_BASE_URL, token, room_id, tag.file_id, true))
                 .collect()
         }
-        (Some(_), None, None) | (None, Some(_), None) => {
-            bail!("{}", tr("Specify both --room-id and --file-id."))
-        }
-        _ => bail!(
-            "{}",
-            tr("Specify either --chat-url or the pair of --room-id and --file-id.")
-        ),
+        (Some(_), None, None) | (None, Some(_), None) => Err(usage_error(
+            UsageContext::DownloadFile,
+            tr("Specify both --room-id and --file-id."),
+        )),
+        _ => Err(usage_error(
+            UsageContext::DownloadFile,
+            tr("Specify either --chat-url or the pair of --room-id and --file-id."),
+        )),
     }
 }
 
@@ -640,10 +752,10 @@ fn handle_template_command(command: TemplateCommand, config: &Config) -> Result<
             }
         }
         TemplateCommand::Show(args) => {
-            let template = get_template(config, &args.name)?;
-            let body = resolve_template_body(config, &args.name, template)?;
-            let vars = parse_vars(&args.vars)?;
-            let rendered = render_template(&body, &vars)?;
+            let template = get_template(config, &args.name, UsageContext::TemplateShow)?;
+            let body = resolve_template_body(config, &args.name, template, UsageContext::TemplateShow)?;
+            let vars = parse_vars(&args.vars, UsageContext::TemplateShow)?;
+            let rendered = render_template(&body, &vars, UsageContext::TemplateShow)?;
             println!("{rendered}");
         }
     }
@@ -652,11 +764,11 @@ fn handle_template_command(command: TemplateCommand, config: &Config) -> Result<
 }
 
 fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
-    let template = get_template(config, &args.name)?;
-    let body = resolve_template_body(config, &args.name, template)?;
-    let vars = parse_vars(&args.vars)?;
+    let template = get_template(config, &args.name, UsageContext::Send)?;
+    let body = resolve_template_body(config, &args.name, template, UsageContext::Send)?;
+    let vars = parse_vars(&args.vars, UsageContext::Send)?;
     let room_id = resolve_room_id(&args, config, template)?;
-    let rendered = render_template(&body, &vars)?;
+    let rendered = render_template(&body, &vars, UsageContext::Send)?;
 
     if args.dry_run {
         println!("{rendered}");
@@ -779,22 +891,25 @@ fn parse_chatwork_message_url(url: &str) -> Result<(u64, u64)> {
     let marker = "#!rid";
     let start = url
         .find(marker)
-        .context(tr("The URL must contain `#!rid<room_id>-<message_id>`.") )?;
+        .ok_or_else(|| usage_error(
+            UsageContext::DownloadFile,
+            tr("The URL must contain `#!rid<room_id>-<message_id>`."),
+        ))?;
     let rest = &url[start + marker.len()..];
     let (room_text, tail) = split_leading_digits(rest)
-        .context(tr("Failed to parse room_id from chat URL."))?;
+        .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Failed to parse room_id from chat URL.")))?;
 
     let message_text = tail
         .strip_prefix('-')
         .and_then(|tail| split_leading_digits(tail).map(|(digits, _)| digits))
-        .context(tr("Failed to parse message_id from chat URL."))?;
+        .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Failed to parse message_id from chat URL.")))?;
 
     let room_id = room_text
         .parse::<u64>()
-        .context(tr("Failed to parse room_id from chat URL."))?;
+        .map_err(|_| usage_error(UsageContext::DownloadFile, tr("Failed to parse room_id from chat URL.")))?;
     let message_id = message_text
         .parse::<u64>()
-        .context(tr("Failed to parse message_id from chat URL."))?;
+        .map_err(|_| usage_error(UsageContext::DownloadFile, tr("Failed to parse message_id from chat URL.")))?;
 
     Ok((room_id, message_id))
 }
@@ -822,22 +937,31 @@ fn extract_download_tags(body: &str) -> Result<Vec<DownloadTag>> {
         let after_start = &rest[start + marker.len()..];
         let end = after_start
             .find(']')
-            .context(tr("Missing closing `]` for download tag."))?;
+            .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Missing closing `]` for download tag.")))?;
         let id_text = after_start[..end].trim();
         let file_id = id_text
             .parse::<u64>()
-            .with_context(|| trf("Failed to parse file_id from download tag: {tag}", &[("tag", id_text)]))?;
+            .map_err(|_| usage_error(
+                UsageContext::DownloadFile,
+                trf("Failed to parse file_id from download tag: {tag}", &[("tag", id_text)]),
+            ))?;
         let after_open_tag = &after_start[end + 1..];
         let close_index = after_open_tag
             .find(closing_tag)
-            .context(tr("Missing closing `[/download]` for download tag."))?;
+            .ok_or_else(|| usage_error(
+                UsageContext::DownloadFile,
+                tr("Missing closing `[/download]` for download tag."),
+            ))?;
         let label = after_open_tag[..close_index].trim().to_string();
         tags.push(DownloadTag { file_id, label });
         rest = &after_open_tag[close_index + closing_tag.len()..];
     }
 
     if tags.is_empty() {
-        bail!("{}", tr("The message does not contain a download tag."));
+        return Err(usage_error(
+            UsageContext::DownloadFile,
+            tr("The message does not contain a download tag."),
+        ));
     }
 
     Ok(tags)
@@ -942,17 +1066,20 @@ fn parse_download_selection_input(input: &str, tags: &[DownloadTag]) -> Option<V
 
 fn validate_download_destination_args(output: Option<&Path>, out_dir: Option<&Path>, file_count: usize) -> Result<()> {
     if output.is_some() && out_dir.is_some() {
-        bail!("{}", tr("Specify either --output or --out-dir, not both."));
+        return Err(usage_error(
+            UsageContext::DownloadFile,
+            tr("Specify either --output or --out-dir, not both."),
+        ));
     }
 
     if file_count > 1 {
         if let Some(path) = output {
             let expanded = expand_home(path);
             if !expanded.is_dir() {
-                bail!(
-                    "{}",
-                    tr("Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path.")
-                );
+                return Err(usage_error(
+                    UsageContext::DownloadFile,
+                    tr("Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path."),
+                ));
             }
         }
     }
@@ -1168,14 +1295,19 @@ fn print_contacts(contacts: &[ContactResponse], format: GetFormat) -> Result<()>
     Ok(())
 }
 
-fn get_template<'a>(config: &'a Config, name: &str) -> Result<&'a Template> {
+fn get_template<'a>(config: &'a Config, name: &str, context: UsageContext) -> Result<&'a Template> {
     config
         .templates
         .get(name)
-        .with_context(|| trf("Template `{name}` was not found.", &[("name", name)]))
+        .ok_or_else(|| usage_error(context, trf("Template `{name}` was not found.", &[("name", name)])))
 }
 
-fn resolve_template_body(config: &Config, template_name: &str, template: &Template) -> Result<String> {
+fn resolve_template_body(
+    config: &Config,
+    template_name: &str,
+    template: &Template,
+    context: UsageContext,
+) -> Result<String> {
     match (&template.body, &template.body_file) {
         (Some(body), None) => Ok(body.clone()),
         (None, Some(body_file)) => {
@@ -1187,13 +1319,13 @@ fn resolve_template_body(config: &Config, template_name: &str, template: &Templa
                 )
             })
         }
-        _ => bail!(
-            "{}",
+        _ => Err(usage_error(
+            context,
             trf(
                 "Template `{name}` must specify exactly one of body or body_file.",
                 &[("name", template_name)],
-            )
-        ),
+            ),
+        )),
     }
 }
 
@@ -1202,22 +1334,23 @@ fn resolve_room_id(args: &SendArgs, config: &Config, template: &Template) -> Res
         .clone()
         .or_else(|| template.room_id.clone())
         .or_else(|| config.default_room_id.clone())
-        .context(tr(
-            "Specify one of --room, template room_id, or default_room_id.",
+        .ok_or_else(|| usage_error(
+            UsageContext::Send,
+            tr("Specify one of --room, template room_id, or default_room_id."),
         ))
 }
 
-fn parse_vars(items: &[String]) -> Result<BTreeMap<String, String>> {
+fn parse_vars(items: &[String], context: UsageContext) -> Result<BTreeMap<String, String>> {
     let mut vars = BTreeMap::new();
 
     for item in items {
         let (key, value) = item
             .split_once('=')
-            .with_context(|| trf("`{item}` must use KEY=VALUE format.", &[("item", item)]))?;
+            .ok_or_else(|| usage_error(context, trf("`{item}` must use KEY=VALUE format.", &[("item", item)])))?;
         let key = key.trim();
 
         if key.is_empty() {
-            bail!("{}", trf("Variable names cannot be empty: `{item}`", &[("item", item)]));
+            return Err(usage_error(context, trf("Variable names cannot be empty: `{item}`", &[("item", item)])));
         }
 
         vars.insert(key.to_string(), value.to_string());
@@ -1250,7 +1383,7 @@ fn resolve_templates_prefix(config: &Config) -> PathBuf {
     }
 }
 
-fn render_template(body: &str, vars: &BTreeMap<String, String>) -> Result<String> {
+fn render_template(body: &str, vars: &BTreeMap<String, String>, context: UsageContext) -> Result<String> {
     let mut rendered = String::with_capacity(body.len());
     let mut rest = body;
 
@@ -1259,16 +1392,16 @@ fn render_template(body: &str, vars: &BTreeMap<String, String>) -> Result<String
         let after_start = &rest[start + 2..];
         let end = after_start
             .find("}}")
-            .context(tr("Missing closing `}}` for template placeholder."))?;
+            .ok_or_else(|| usage_error(context, tr("Missing closing `}}` for template placeholder.")))?;
         let key = after_start[..end].trim();
 
         if key.is_empty() {
-            bail!("{}", tr("Empty placeholder names are not allowed."));
+            return Err(usage_error(context, tr("Empty placeholder names are not allowed.")));
         }
 
         let value = vars
             .get(key)
-            .with_context(|| trf("Variable `{key}` is not set.", &[("key", key)]))?;
+            .ok_or_else(|| usage_error(context, trf("Variable `{key}` is not set.", &[("key", key)])))?;
         rendered.push_str(value);
         rest = &after_start[end + 2..];
     }
@@ -1439,14 +1572,14 @@ mod tests {
             ("name".to_string(), "あい".to_string()),
             ("topic".to_string(), "定型文".to_string()),
         ]);
-        let rendered = render_template("{{name}} が {{topic}} を送る", &vars).unwrap();
+        let rendered = render_template("{{name}} が {{topic}} を送る", &vars, UsageContext::Send).unwrap();
         assert_eq!(rendered, "あい が 定型文 を送る");
     }
 
     #[test]
     fn render_template_fails_on_missing_value() {
         let vars = BTreeMap::new();
-        let err = render_template("{{name}}", &vars).unwrap_err();
+        let err = render_template("{{name}}", &vars, UsageContext::Send).unwrap_err();
         assert_eq!(
             err.to_string(),
             trf("Variable `{key}` is not set.", &[("key", "name")]),
@@ -1455,7 +1588,11 @@ mod tests {
 
     #[test]
     fn parse_vars_reads_key_value_pairs() {
-        let vars = parse_vars(&["name=あい".to_string(), "topic=確認".to_string()]).unwrap();
+        let vars = parse_vars(
+            &["name=あい".to_string(), "topic=確認".to_string()],
+            UsageContext::Send,
+        )
+        .unwrap();
         assert_eq!(vars.get("name").unwrap(), "あい");
         assert_eq!(vars.get("topic").unwrap(), "確認");
     }
@@ -2004,7 +2141,7 @@ body_file = "greeting.txt"
         assert_eq!(config.templates_prefix.as_deref(), Some("./templates"));
         assert_eq!(template.description.as_deref(), Some("あいさつ"));
         assert_eq!(
-            resolve_template_body(&config, "greeting", template).unwrap(),
+            resolve_template_body(&config, "greeting", template, UsageContext::TemplateShow).unwrap(),
             "こんにちは、{{name}}さん\n"
         );
 
