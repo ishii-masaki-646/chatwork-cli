@@ -21,6 +21,24 @@ msgstr "テンプレート `{name}` では body または body_file のいずれ
 msgid "Specify one of --room, template room_id, or default_room_id."
 msgstr "--room、テンプレートの room_id、default_room_id のいずれかを指定してください。"
 
+msgid "Specify either a template name or --message, not both."
+msgstr "テンプレート名と --message は同時指定できません。"
+
+msgid "Specify either a template name or --message."
+msgstr "テンプレート名または --message を指定してください。"
+
+msgid "A config file is required when using a template."
+msgstr "テンプレートを使う場合は設定ファイルが必要です。"
+
+msgid "Do not use --var together with --message."
+msgstr "--message と --var は同時に指定できません。"
+
+msgid "Specify one of --room-id, template room_id, or default_room_id."
+msgstr "--room-id、テンプレートの room_id、default_room_id のいずれかを指定してください。"
+
+msgid "Specify one of --room-id or default_room_id when using --message."
+msgstr "--message を使う場合は --room-id または default_room_id を指定してください。"
+
 msgid "`{item}` must use KEY=VALUE format."
 msgstr "`{item}` は KEY=VALUE 形式で指定してください。"
 

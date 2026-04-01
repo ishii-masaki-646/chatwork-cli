@@ -167,7 +167,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room|--var)
+            --room-id|--room|--message|--var)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -200,13 +200,13 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--room|--var)
+        --room-id|--file-id|--message-id|--room|--message|--var)
             return 0
             ;;
     esac
 
     if [[ "${mode}" == "send" ]]; then
-        local opts="--room --var --self-unread --dry-run --config --help"
+        local opts="--room-id --room --message --var --self-unread --dry-run --config --help"
         if [[ ${positional_seen} -eq 0 && "${cur}" != -* ]]; then
             local cmd=(chatwork)
             local templates combined
@@ -488,7 +488,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room|--var)
+            --room-id|--room|--message|--var)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -527,7 +527,7 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--room|--var)
+        --room-id|--file-id|--message-id|--room|--message|--var)
             return 0
             ;;
     esac
@@ -621,7 +621,9 @@ _chatwork() {
     if [[ "${mode}" == "send" ]]; then
         local -a opts templates lines cmd template_specs
         opts=(
-            $'--room\t送信先ルーム ID を指定する'
+            $'--room-id\t送信先ルーム ID を指定する'
+            $'--room\t送信先ルーム ID を指定する（互換 alias）'
+            $'--message\tテンプレートを使わずに送るメッセージ本文を指定する'
             $'--var\t差し込み変数を指定する'
             $'--self-unread\t自分を未読にする'
             $'--dry-run\t送信せず本文のみ表示する'

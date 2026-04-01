@@ -62,7 +62,11 @@ enum Commands {
         #[command(subcommand)]
         command: TemplateCommand,
     },
-    /// テンプレートを送信する
+    /// テンプレートまたは任意メッセージを送信する
+    #[command(
+        override_usage = "chatwork send [OPTIONS] <NAME>\n       chatwork s [OPTIONS] <NAME>\n       chatwork send [OPTIONS] --message <MESSAGE>\n       chatwork s [OPTIONS] --message <MESSAGE>",
+        after_help = "テンプレート名と --message は同時指定できません。--message を使う場合は --room-id を優先し、未指定なら default_room_id を使います。"
+    )]
     Send(SendArgs),
     /// シェル補完スクリプトを出力する
     Completion(CompletionArgs),
@@ -190,11 +194,15 @@ struct ShowArgs {
 #[derive(Debug, Args)]
 struct SendArgs {
     /// テンプレート名
-    name: String,
+    name: Option<String>,
 
-    /// 送信先ルーム ID。省略時はテンプレート設定か default_room_id を使う
-    #[arg(long, value_name = "ROOM_ID")]
-    room: Option<String>,
+    /// 送信先ルーム ID。テンプレート送信時は省略するとテンプレート設定か default_room_id を使う
+    #[arg(long = "room-id", visible_alias = "room", value_name = "ROOM_ID")]
+    room_id: Option<String>,
+
+    /// テンプレートを使わずに送るメッセージ本文
+    #[arg(short = 'm', long, value_name = "MESSAGE")]
+    message: Option<String>,
 
     /// 差し込み変数。例: --var name=あい
     #[arg(long = "var", value_name = "KEY=VALUE")]
@@ -401,8 +409,8 @@ fn main() -> Result<()> {
             handle_template_command(command, &config)
         }
         Commands::Send(args) => {
-            let config = load_config_for_cli(cli.config.as_deref())?;
-            handle_send_command(args, &config)
+            let config = load_send_config_for_cli(cli.config.as_deref())?;
+            handle_send_command(args, config.as_ref())
         }
         Commands::Completion(args) => {
             handle_completion_command(args);
@@ -728,13 +736,16 @@ Options:
   -h, --help             ヘルプを表示する"#,
         UsageContext::Send => r#"Usage: chatwork send [OPTIONS] <NAME>
        chatwork s [OPTIONS] <NAME>
+       chatwork send [OPTIONS] --message <MESSAGE>
+       chatwork s [OPTIONS] --message <MESSAGE>
 
 Arguments:
-  <NAME>  テンプレート名
+  [NAME]  テンプレート名
 
 Options:
       --config <PATH>    設定ファイルのパス
-      --room <ROOM_ID>   送信先ルーム ID。省略時はテンプレート設定か default_room_id を使う
+      --room-id <ROOM_ID>  送信先ルーム ID。テンプレート送信時は省略するとテンプレート設定か default_room_id を使う
+  -m, --message <MESSAGE>  テンプレートを使わずに送るメッセージ本文
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
       --self-unread      自分を未読にする
       --dry-run          実際には送らず本文だけ表示する
@@ -857,7 +868,7 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
 fn long_option_takes_value(name: &str) -> bool {
     matches!(
         name,
-        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "message-id" | "room" | "var"
+        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "message-id" | "room" | "message" | "var"
     )
 }
 
@@ -957,6 +968,23 @@ fn handle_completion_command(args: CompletionArgs) {
 fn load_config_for_cli(path: Option<&Path>) -> Result<Config> {
     let config_path = resolve_config_path(path)?;
     load_config(&config_path)
+}
+
+fn load_send_config_for_cli(path: Option<&Path>) -> Result<Option<Config>> {
+    match path {
+        Some(path) => {
+            let config_path = resolve_config_path(Some(path))?;
+            Ok(Some(load_config(&config_path)?))
+        }
+        None => {
+            let config_path = resolve_config_path(None)?;
+            if config_path.exists() {
+                Ok(Some(load_config(&config_path)?))
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn handle_get_command(command: GetCommand) -> Result<()> {
@@ -1113,12 +1141,8 @@ fn handle_template_command(command: TemplateCommand, config: &Config) -> Result<
     Ok(())
 }
 
-fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
-    let template = get_template(config, &args.name, UsageContext::Send)?;
-    let body = resolve_template_body(config, &args.name, template, UsageContext::Send)?;
-    let vars = parse_vars(&args.vars, UsageContext::Send)?;
-    let room_id = resolve_room_id(&args, config, template)?;
-    let rendered = render_template(&body, &vars, UsageContext::Send)?;
+fn handle_send_command(args: SendArgs, config: Option<&Config>) -> Result<()> {
+    let (room_id, rendered, base_url) = resolve_send_request(&args, config)?;
 
     if args.dry_run {
         println!("{rendered}");
@@ -1128,7 +1152,7 @@ fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
     let token = load_api_token()?;
 
     let message_id = send_message(
-        &config.base_url,
+        &base_url,
         &token,
         &room_id,
         &rendered,
@@ -1143,6 +1167,47 @@ fn handle_send_command(args: SendArgs, config: &Config) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn resolve_send_request(args: &SendArgs, config: Option<&Config>) -> Result<(String, String, String)> {
+    match (&args.name, &args.message) {
+        (Some(_), Some(_)) => Err(usage_error(
+            UsageContext::Send,
+            tr("Specify either a template name or --message, not both."),
+        )),
+        (None, None) => Err(usage_error(
+            UsageContext::Send,
+            tr("Specify either a template name or --message."),
+        )),
+        (Some(name), None) => {
+            let config = config.ok_or_else(|| {
+                usage_error(
+                    UsageContext::Send,
+                    tr("A config file is required when using a template."),
+                )
+            })?;
+            let template = get_template(config, name, UsageContext::Send)?;
+            let body = resolve_template_body(config, name, template, UsageContext::Send)?;
+            let vars = parse_vars(&args.vars, UsageContext::Send)?;
+            let room_id = resolve_template_send_room_id(args, config, template)?;
+            let rendered = render_template(&body, &vars, UsageContext::Send)?;
+            Ok((room_id, rendered, config.base_url.clone()))
+        }
+        (None, Some(message)) => {
+            if !args.vars.is_empty() {
+                return Err(usage_error(
+                    UsageContext::Send,
+                    tr("Do not use --var together with --message."),
+                ));
+            }
+
+            let room_id = resolve_raw_message_room_id(args, config)?;
+            let base_url = config
+                .map(|config| config.base_url.clone())
+                .unwrap_or_else(default_base_url);
+            Ok((room_id, message.clone(), base_url))
+        }
+    }
 }
 
 fn load_api_token() -> Result<String> {
@@ -1788,15 +1853,27 @@ fn resolve_template_body(
     }
 }
 
-fn resolve_room_id(args: &SendArgs, config: &Config, template: &Template) -> Result<String> {
-    args.room
+fn resolve_template_send_room_id(args: &SendArgs, config: &Config, template: &Template) -> Result<String> {
+    args.room_id
         .clone()
         .or_else(|| template.room_id.clone())
         .or_else(|| config.default_room_id.clone())
         .ok_or_else(|| usage_error(
             UsageContext::Send,
-            tr("Specify one of --room, template room_id, or default_room_id."),
+            tr("Specify one of --room-id, template room_id, or default_room_id."),
         ))
+}
+
+fn resolve_raw_message_room_id(args: &SendArgs, config: Option<&Config>) -> Result<String> {
+    args.room_id
+        .clone()
+        .or_else(|| config.and_then(|config| config.default_room_id.clone()))
+        .ok_or_else(|| {
+            usage_error(
+                UsageContext::Send,
+                tr("Specify one of --room-id or default_room_id when using --message."),
+            )
+        })
 }
 
 fn parse_vars(items: &[String], context: UsageContext) -> Result<BTreeMap<String, String>> {
@@ -2794,6 +2871,8 @@ body_file = "invalid.txt"
         let text = help_text(UsageContext::Send);
         assert!(text.contains("chatwork send [OPTIONS] <NAME>"));
         assert!(text.contains("chatwork s [OPTIONS] <NAME>"));
+        assert!(text.contains("chatwork send [OPTIONS] --message <MESSAGE>"));
+        assert!(text.contains("chatwork s [OPTIONS] --message <MESSAGE>"));
         assert!(text.contains("ヘルプを表示する"));
     }
 
@@ -2805,10 +2884,80 @@ body_file = "invalid.txt"
 
     #[test]
     fn translate_clap_error_localizes_missing_required_argument() {
-        let err = Cli::try_parse_from(["chatwork", "send"]).unwrap_err();
+        let err = Cli::try_parse_from(["chatwork", "template", "show"]).unwrap_err();
         assert_eq!(
-            translate_clap_error(&err, UsageContext::Send),
+            translate_clap_error(&err, UsageContext::TemplateShow),
             trf("Required argument is missing: {arg}", &[("arg", "<NAME>")])
+        );
+    }
+
+    #[test]
+    fn resolve_send_request_rejects_missing_template_name_or_message() {
+        let err = resolve_send_request(
+            &SendArgs {
+                name: None,
+                room_id: None,
+                message: None,
+                vars: Vec::new(),
+                self_unread: false,
+                dry_run: false,
+            },
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            tr("Specify either a template name or --message.")
+        );
+    }
+
+    #[test]
+    fn resolve_send_request_uses_default_room_id_for_raw_message() {
+        let config = Config {
+            default_room_id: Some("123456".to_string()),
+            base_url: "https://api.chatwork.com/v2".to_string(),
+            templates_prefix: None,
+            templates: BTreeMap::new(),
+            config_dir: PathBuf::new(),
+        };
+
+        let (room_id, message, base_url) = resolve_send_request(
+            &SendArgs {
+                name: None,
+                room_id: None,
+                message: Some("任意の本文".to_string()),
+                vars: Vec::new(),
+                self_unread: false,
+                dry_run: false,
+            },
+            Some(&config),
+        )
+        .unwrap();
+
+        assert_eq!(room_id, "123456");
+        assert_eq!(message, "任意の本文");
+        assert_eq!(base_url, "https://api.chatwork.com/v2");
+    }
+
+    #[test]
+    fn resolve_send_request_rejects_vars_with_raw_message() {
+        let err = resolve_send_request(
+            &SendArgs {
+                name: None,
+                room_id: Some("123456".to_string()),
+                message: Some("任意の本文".to_string()),
+                vars: vec!["name=ai".to_string()],
+                self_unread: false,
+                dry_run: false,
+            },
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            tr("Do not use --var together with --message.")
         );
     }
 

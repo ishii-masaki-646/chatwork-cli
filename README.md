@@ -110,7 +110,8 @@ cargo run -- download file --room-id 123 --file-id 456 --output ./downloads/repo
 cargo run -- download file --room-id 123 --file-id 456 --out-dir ./downloads
 cargo run -- template list --config ./config/config.example.toml
 cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
-cargo run -- send follow_up --config ./config/config.example.toml --room 123456 --var to_id=12345 --var topic=見積 --dry-run
+cargo run -- send follow_up --config ./config/config.example.toml --room-id 123456 --var to_id=12345 --var topic=見積 --dry-run
+cargo run -- send --message '任意の本文です' --room-id 123456 --dry-run
 ```
 
 `get me` / `get status` / `get contacts` / `get room` / `get message` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。`get` の直後または `--chat-url` で Chatwork URL を渡した場合は、`#!rid<room_id>` なら `get room`、`#!rid<room_id>-<message_id>` なら `get message` へ自動で振り分けます。`get room` / `get message` でも `--chat-url` と位置引数 `[CHAT_URL]` の両方を受け付けますが、同時指定はできません。
@@ -135,8 +136,10 @@ cargo run -- send follow_up --config ./config/config.example.toml --room 123456 
 
 実際に送信する場合は `--dry-run` を外してください。
 
-`send` の送信先ルームは、次の優先順位で決定されます。
+`send` はテンプレート名か `--message` のどちらか一方だけを指定します。`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` はテンプレート送信時だけ利用できます。
 
-1. `--room`
+テンプレート送信時の送信先ルームは、次の優先順位で決定されます。
+
+1. `--room-id` (`--room` でも可)
 2. テンプレートの `room_id`
 3. `default_room_id`
