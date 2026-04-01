@@ -243,7 +243,7 @@ _chatwork() {
     fi
 
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "me status my-status contacts room message --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "me status my-status contacts room message --format --chat-url --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -597,6 +597,8 @@ _chatwork() {
             $'contacts\tコンタクト一覧を表示する'
             $'room\tルーム情報を表示する'
             $'message\tメッセージ情報を表示する'
+            $'--format\t出力形式を指定する'
+            $'--chat-url\tChatwork URL を指定する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )

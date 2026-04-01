@@ -45,8 +45,8 @@ struct Cli {
 enum Commands {
     /// 情報を取得する
     #[command(
-        override_usage = "chatwork get [OPTIONS] <COMMAND>\n       chatwork g [OPTIONS] <COMMAND>\n       chatwork get [CHAT_URL]\n       chatwork g [CHAT_URL]\n       chatwork get --chat-url <URL>\n       chatwork g --chat-url <URL>",
-        after_help = "Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。"
+        override_usage = "chatwork get [OPTIONS] <COMMAND>\n       chatwork g [OPTIONS] <COMMAND>\n       chatwork get [OPTIONS] [CHAT_URL]\n       chatwork g [OPTIONS] [CHAT_URL]\n       chatwork get [OPTIONS] --chat-url <URL>\n       chatwork g [OPTIONS] --chat-url <URL>",
+        after_help = "Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。--format は URL の前にも指定できます。"
     )]
     Get {
         #[command(subcommand)]
@@ -659,10 +659,10 @@ Options:
   -V, --version        バージョンを表示する"#,
         UsageContext::Get => r#"Usage: chatwork get [OPTIONS] <COMMAND>
        chatwork g [OPTIONS] <COMMAND>
-       chatwork get [CHAT_URL]
-       chatwork g [CHAT_URL]
-       chatwork get --chat-url <URL>
-       chatwork g --chat-url <URL>
+       chatwork get [OPTIONS] [CHAT_URL]
+       chatwork g [OPTIONS] [CHAT_URL]
+       chatwork get [OPTIONS] --chat-url <URL>
+       chatwork g [OPTIONS] --chat-url <URL>
 
 Commands:
   me          自分のアカウント情報を表示する
@@ -674,11 +674,12 @@ Commands:
   help        このメッセージまたは指定したサブコマンドのヘルプを表示する
 
 Options:
+      --format <FORMAT>  出力形式
       --chat-url <URL>  Chatwork URL を指定する
       --config <PATH>  設定ファイルのパス
   -h, --help           ヘルプを表示する
 
-Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。"#,
+Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。--format は URL の前にも指定できます。"#,
         UsageContext::GetRoom => r#"Usage: chatwork get room [OPTIONS] [CHAT_URL]
        chatwork g room [OPTIONS] [CHAT_URL]
        chatwork g r [OPTIONS] [CHAT_URL]
@@ -778,7 +779,8 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
     let mut parse_options = true;
     let mut pending_download_default_index = None;
     let mut download_item_seen = false;
-    let mut pending_get_chat_url_insert_index = None;
+    let mut pending_get_chat_url = false;
+    let mut get_subcommand_insert_index = None;
 
     for (index, arg) in args.into_iter().enumerate() {
         if index == 0 {
@@ -797,11 +799,15 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         };
 
         if expect_value {
-            if let Some(insert_index) = pending_get_chat_url_insert_index.take() {
+            if pending_get_chat_url {
                 if let Some(target) = infer_get_target_from_url(&text) {
                     context = CommandContext::Leaf;
+                    let insert_index = get_subcommand_insert_index
+                        .take()
+                        .unwrap_or(normalized.len());
                     normalized.insert(insert_index, OsString::from(target));
                 }
+                pending_get_chat_url = false;
             }
             normalized.push(arg);
             expect_value = false;
@@ -821,10 +827,13 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
                 if let Some(value) = long_option.strip_prefix("chat-url=") {
                     if let Some(target) = infer_get_target_from_url(value) {
                         context = CommandContext::Leaf;
-                        normalized.push(OsString::from(target));
+                        let insert_index = get_subcommand_insert_index
+                            .take()
+                            .unwrap_or(normalized.len());
+                        normalized.insert(insert_index, OsString::from(target));
                     }
                 } else {
-                    pending_get_chat_url_insert_index = Some(normalized.len());
+                    pending_get_chat_url = true;
                 }
             }
             normalized.push(arg);
@@ -842,7 +851,10 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         if matches!(context, CommandContext::Get) {
             if let Some(target) = infer_get_target_from_url(&text) {
                 context = CommandContext::Leaf;
-                normalized.push(OsString::from(target));
+                let insert_index = get_subcommand_insert_index
+                    .take()
+                    .unwrap_or(normalized.len());
+                normalized.insert(insert_index, OsString::from(target));
                 normalized.push(arg);
                 continue;
             }
@@ -854,6 +866,11 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
             if matches!(context, CommandContext::Download) {
                 pending_download_default_index = Some(normalized.len() + 1);
                 download_item_seen = false;
+            }
+            if matches!(context, CommandContext::Get) {
+                get_subcommand_insert_index = Some(normalized.len() + 1);
+            } else if matches!(context, CommandContext::Leaf) {
+                get_subcommand_insert_index = None;
             }
             if matches!(command.as_str(), "file" | "help")
                 && pending_download_default_index.is_some()
@@ -2477,6 +2494,52 @@ mod tests {
                 OsString::from("get"),
                 OsString::from("room"),
                 OsString::from("https://www.chatwork.com/#!rid32293227"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_routes_get_message_url_to_message_subcommand_after_format_option() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "get".into(),
+            "--format=json-minify".into(),
+            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("get"),
+                OsString::from("message"),
+                OsString::from("--format=json-minify"),
+                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_routes_get_message_url_to_message_subcommand_after_chat_url_option() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "get".into(),
+            "--format=json-minify".into(),
+            "--chat-url".into(),
+            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("get"),
+                OsString::from("message"),
+                OsString::from("--format=json-minify"),
+                OsString::from("--chat-url"),
+                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
             ]
         );
     }
