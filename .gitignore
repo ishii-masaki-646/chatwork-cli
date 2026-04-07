@@ -1,3 +1,9 @@
+.idea
+.idea/*
+.claude
+.claude/*
+.codex
+.codex/*
 /target
 /bin/chatwork
 .env
