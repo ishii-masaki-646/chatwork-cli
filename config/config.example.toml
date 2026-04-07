@@ -1,4 +1,4 @@
-default_room_id = "123456789"
+default_room_id = "12345678"
 templates_prefix = "./templates"
 
 [templates.follow_up]
@@ -15,7 +15,7 @@ body = """
 
 [templates.reminder]
 description = "リマインド"
-room_id = "987654321"
+room_id = "23456789"
 body = """
 [info][title]リマインド[/title]
 {{message}}

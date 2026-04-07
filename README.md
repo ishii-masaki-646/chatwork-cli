@@ -68,12 +68,12 @@ If you want to load catalogs from another location, override `CHATWORK_LOCALE_DI
 
 ## Configuration
 
-The default config file path is `~/.config/chatwork-cli/config.toml`. See [config/config.example.toml](/home/ishii/work/myrepo/chatwork-cli/config/config.example.toml) for an example.
+The default config file path is `~/.config/chatwork-cli/config.toml`. See [config/config.example.toml](./config/config.example.toml) for an example.
 
 Template bodies can be written directly in `body` or loaded from files with `body_file`. If `templates_prefix` is omitted, the default is `~/.config/chatwork-cli/templates`. Relative `body_file` paths are resolved from that directory.
 
 ```toml
-default_room_id = "123456789"
+default_room_id = "12345678"
 templates_prefix = "~/.config/chatwork-cli/templates"
 
 [templates.follow_up]
@@ -81,7 +81,7 @@ description = "Follow-up request"
 body_file = "follow_up.txt"
 
 [templates.reminder]
-room_id = "987654321"
+room_id = "23456789"
 body = """
 [info][title]Reminder[/title]
 {{message}}
@@ -99,18 +99,18 @@ cargo run -- get me --format=plain
 cargo run -- get status
 cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
-cargo run -- get contacts --aids=123,456 --format=json-minify
+cargo run -- get contacts --aids=1234567,7654321 --format=json-minify
 cargo run -- get contacts --name-query=ishi --format=json-minify
-cargo run -- get room --room-id 123
-cargo run -- get room 'https://www.chatwork.com/#!rid123'
-cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid123'
-cargo run -- get message --room-id 123 --message-id 456
-cargo run -- get message 'https://www.chatwork.com/#!rid123-456'
-cargo run -- get message --chat-url 'https://www.chatwork.com/#!rid123-456'
-cargo run -- get 'https://www.chatwork.com/#!rid123'
-cargo run -- get 'https://www.chatwork.com/#!rid123-456'
-cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123'
-cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123-456'
+cargo run -- get room --room-id 12345678
+cargo run -- get room 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get message --room-id 12345678 --message-id 1234567890123456789
+cargo run -- get message 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- get message --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- get 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
 ```
 
 `get me`, `get status`, `get contacts`, `get room`, and `get message` output pretty JSON by default. Use `--format=json-minify` for one-line JSON or `--format=plain` for a compact text view.
@@ -119,7 +119,7 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123-456'
 
 `get contacts` supports these filters:
 
-- `--aids=123,456`: filter by exact `account_id`
+- `--aids=1234567,7654321`: filter by exact `account_id`
 - `--name-query=ishi`: filter by partial `name`
 - `--aids` and `--name-query` can be combined
 
@@ -133,13 +133,13 @@ If you pass a Chatwork URL directly to `get` or through `--chat-url`, it is rout
 ### Download files
 
 ```bash
-cargo run -- download 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
-cargo run -- download --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
-cargo run -- download file 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
-cargo run -- download file --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
-cargo run -- download file --room-id 123 --file-id 456
-cargo run -- download file --room-id 123 --file-id 456 --output ./downloads/report.zip --force
-cargo run -- download file --room-id 123 --file-id 456 --out-dir ./downloads
+cargo run -- download 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- download --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- download file 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- download file --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
+cargo run -- download file --room-id 12345678 --file-id 1234567890
+cargo run -- download file --room-id 12345678 --file-id 1234567890 --output ./downloads/report.zip --force
+cargo run -- download file --room-id 12345678 --file-id 1234567890 --out-dir ./downloads
 ```
 
 If the item is omitted, `download` is treated as `download file`.
@@ -169,14 +169,14 @@ Notes:
 
 ```bash
 cargo run -- template list --config ./config/config.example.toml
-cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=quote
+cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=1234567 --var topic=quote
 ```
 
 ### Send messages
 
 ```bash
-cargo run -- send follow_up --config ./config/config.example.toml --room-id 123456 --var to_id=12345 --var topic=quote --dry-run
-cargo run -- send --message 'Free-form message body' --room-id 123456 --dry-run
+cargo run -- send follow_up --config ./config/config.example.toml --room-id 12345678 --var to_id=1234567 --var topic=quote --dry-run
+cargo run -- send --message 'Free-form message body' --room-id 12345678 --dry-run
 ```
 
 `send` accepts either a template name or `--message`, but not both.

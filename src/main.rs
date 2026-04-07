@@ -2398,7 +2398,7 @@ mod tests {
 
     #[test]
     fn get_room_command_parses_chat_url_as_positional_argument() {
-        let cli = Cli::try_parse_from(["chatwork", "get", "room", "https://www.chatwork.com/#!rid32293227"]).unwrap();
+        let cli = Cli::try_parse_from(["chatwork", "get", "room", "https://www.chatwork.com/#!rid12345678"]).unwrap();
 
         match cli.command {
             Commands::Get { command } => match command {
@@ -2407,7 +2407,7 @@ mod tests {
                     assert_eq!(args.chat_url, None);
                     assert_eq!(
                         args.chat_url_arg.as_deref(),
-                        Some("https://www.chatwork.com/#!rid32293227")
+                        Some("https://www.chatwork.com/#!rid12345678")
                     );
                 }
                 _ => panic!("get room command was not parsed"),
@@ -2422,7 +2422,7 @@ mod tests {
             "chatwork",
             "get",
             "message",
-            "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789",
         ])
         .unwrap();
 
@@ -2434,7 +2434,7 @@ mod tests {
                     assert_eq!(args.chat_url, None);
                     assert_eq!(
                         args.chat_url_arg.as_deref(),
-                        Some("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+                        Some("https://www.chatwork.com/#!rid12345678-1234567890123456789")
                     );
                 }
                 _ => panic!("get message command was not parsed"),
@@ -2483,7 +2483,7 @@ mod tests {
         let args = normalize_cli_args(vec![
             "chatwork".into(),
             "get".into(),
-            "https://www.chatwork.com/#!rid32293227".into(),
+            "https://www.chatwork.com/#!rid12345678".into(),
         ])
         .unwrap();
 
@@ -2493,7 +2493,7 @@ mod tests {
                 OsString::from("chatwork"),
                 OsString::from("get"),
                 OsString::from("room"),
-                OsString::from("https://www.chatwork.com/#!rid32293227"),
+                OsString::from("https://www.chatwork.com/#!rid12345678"),
             ]
         );
     }
@@ -2504,7 +2504,7 @@ mod tests {
             "chatwork".into(),
             "get".into(),
             "--format=json-minify".into(),
-            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789".into(),
         ])
         .unwrap();
 
@@ -2515,7 +2515,7 @@ mod tests {
                 OsString::from("get"),
                 OsString::from("message"),
                 OsString::from("--format=json-minify"),
-                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
+                OsString::from("https://www.chatwork.com/#!rid12345678-1234567890123456789"),
             ]
         );
     }
@@ -2527,7 +2527,7 @@ mod tests {
             "get".into(),
             "--format=json-minify".into(),
             "--chat-url".into(),
-            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789".into(),
         ])
         .unwrap();
 
@@ -2539,7 +2539,7 @@ mod tests {
                 OsString::from("message"),
                 OsString::from("--format=json-minify"),
                 OsString::from("--chat-url"),
-                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
+                OsString::from("https://www.chatwork.com/#!rid12345678-1234567890123456789"),
             ]
         );
     }
@@ -2549,7 +2549,7 @@ mod tests {
         let args = normalize_cli_args(vec![
             "chatwork".into(),
             "get".into(),
-            "https://www.chatwork.com/#!rid32293227-2090707858361688064".into(),
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789".into(),
         ])
         .unwrap();
 
@@ -2559,7 +2559,7 @@ mod tests {
                 OsString::from("chatwork"),
                 OsString::from("get"),
                 OsString::from("message"),
-                OsString::from("https://www.chatwork.com/#!rid32293227-2090707858361688064"),
+                OsString::from("https://www.chatwork.com/#!rid12345678-1234567890123456789"),
             ]
         );
     }
@@ -2714,7 +2714,7 @@ mod tests {
             "chatwork",
             "download",
             "file",
-            "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789",
         ])
         .unwrap();
 
@@ -2726,7 +2726,7 @@ mod tests {
                     assert_eq!(args.chat_url, None);
                     assert_eq!(
                         args.chat_url_arg.as_deref(),
-                        Some("https://www.chatwork.com/#!rid32293227-2090707858361688064")
+                        Some("https://www.chatwork.com/#!rid12345678-1234567890123456789")
                     );
                 }
             },
@@ -2807,34 +2807,34 @@ mod tests {
     fn parse_chatwork_message_url_reads_room_and_message_ids() {
         let (room_id, message_id) =
             parse_chatwork_message_url(
-                "https://www.chatwork.com/#!rid32293227-2090707858361688064",
+                "https://www.chatwork.com/#!rid12345678-1234567890123456789",
                 UsageContext::GetMessage,
             )
                 .unwrap();
-        assert_eq!(room_id, 32293227);
-        assert_eq!(message_id, 2090707858361688064);
+        assert_eq!(room_id, 12345678);
+        assert_eq!(message_id, 1234567890123456789);
     }
 
     #[test]
     fn parse_chatwork_room_url_reads_room_id() {
         let room_id = parse_chatwork_room_url(
-            "https://www.chatwork.com/#!rid32293227",
+            "https://www.chatwork.com/#!rid12345678",
             UsageContext::GetRoom,
         )
         .unwrap();
-        assert_eq!(room_id, 32293227);
+        assert_eq!(room_id, 12345678);
     }
 
     #[test]
     fn extract_download_tags_reads_single_tag() {
         let tags = extract_download_tags(
-            "[info][download:2019373427]file.zip (1 KB)[/download][/info]",
+            "[info][download:1234567890]file.zip (1 KB)[/download][/info]",
         )
         .unwrap();
         assert_eq!(
             tags,
             vec![DownloadTag {
-                file_id: 2019373427,
+                file_id: 1234567890,
                 label: "file.zip (1 KB)".to_string(),
             }]
         );
