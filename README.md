@@ -85,6 +85,8 @@ body = """
 
 ## 使い方
 
+### 情報取得
+
 ```bash
 cargo run -- get me
 cargo run -- get me --format=plain
@@ -103,6 +105,28 @@ cargo run -- get 'https://www.chatwork.com/#!rid123'
 cargo run -- get 'https://www.chatwork.com/#!rid123-456'
 cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123'
 cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123-456'
+```
+
+`get me` / `get status` / `get contacts` / `get room` / `get message` は、既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。
+
+`get my-status` は `get status` の互換名です。
+
+`get contacts` では、次の絞り込みが使えます。
+
+- `--aids=123,456`: 指定した `account_id` のコンタクトだけ返します。
+- `--name-query=石`: `name` を部分一致で絞り込みます。
+- `--aids` と `--name-query` は併用できます。
+
+Chatwork URL を `get` の直後または `--chat-url` で渡した場合は、自動で次のように振り分けます。
+
+- `#!rid<room_id>`: `get room`
+- `#!rid<room_id>-<message_id>`: `get message`
+
+`get room` / `get message` でも `--chat-url` と位置引数 `[CHAT_URL]` の両方を受け付けますが、同時指定はできません。
+
+### ファイル取得
+
+```bash
 cargo run -- download 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download --chat-url 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
 cargo run -- download file 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
@@ -110,17 +134,64 @@ cargo run -- download file --chat-url 'https://www.chatwork.com/#!rid32293227-20
 cargo run -- download file --room-id 123 --file-id 456
 cargo run -- download file --room-id 123 --file-id 456 --output ./downloads/report.zip --force
 cargo run -- download file --room-id 123 --file-id 456 --out-dir ./downloads
+```
+
+`download` は、item を省略した場合に暗黙的に `download file` として扱います。
+
+Chatwork のメッセージ URL を位置引数または `--chat-url` で渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は、`--room-id` と `--file-id` の組み合わせも使えます。
+
+保存先の優先順位は次のとおりです。
+
+1. `--output`
+2. `--out-dir`
+3. `CHATWORK_DEFAULT_DOWNLOAD_DIR`
+4. カレントディレクトリ
+
+補足は次のとおりです。
+
+- `--output` を省略した場合は、API が返した `filename` をそのまま使います。
+- `--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。
+- ディレクトリを明示する場合は `--out-dir` も使えます。
+- `--output` と `--out-dir` は同時指定できません。
+- 既存ファイルへ上書きする場合は `--force` を付けてください。
+- `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A` / `all` で選択できます。
+- 空 Enter は `All` 扱いです。
+
+### テンプレート操作
+
+```bash
 cargo run -- template list --config ./config/config.example.toml
 cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
+```
+
+### 送信
+
+```bash
 cargo run -- send follow_up --config ./config/config.example.toml --room-id 123456 --var to_id=12345 --var topic=見積 --dry-run
 cargo run -- send --message '任意の本文です' --room-id 123456 --dry-run
 ```
 
-`get me` / `get status` / `get contacts` / `get room` / `get message` は既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。`get my-status` は `get status` の互換名です。`get contacts --aids=123,456` のように `--aids` を付けると、指定した `account_id` のコンタクトだけ返します。`get contacts --name-query=石` のように `--name-query` を付けると、`name` を部分一致で絞り込みます。`--aids` と `--name-query` は併用できます。`get` の直後または `--chat-url` で Chatwork URL を渡した場合は、`#!rid<room_id>` なら `get room`、`#!rid<room_id>-<message_id>` なら `get message` へ自動で振り分けます。`get room` / `get message` でも `--chat-url` と位置引数 `[CHAT_URL]` の両方を受け付けますが、同時指定はできません。
+`send` はテンプレート名か `--message` のどちらか一方だけを指定します。
 
-`download` は、item を省略した場合に暗黙的に `download file` として扱います。`--chat-url` または位置引数で Chatwork のメッセージ URL を渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は `--room-id` と `--file-id` の組み合わせも使えます。`--output` を省略した場合は API が返した `filename` をそのまま保存先に使います。`.env` や通常の環境変数で `CHATWORK_DEFAULT_DOWNLOAD_DIR` を指定している場合は、`--output` / `--out-dir` がないときの既定保存先として利用します。`--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。ディレクトリを明示する場合は `--out-dir` も使えます。`--output` と `--out-dir` は同時指定できません。既存ファイルへ上書きする場合は `--force` を付けてください。メッセージ内に `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A`/`all` で選択できます。空 Enter は `All` 扱いです。
+`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` はテンプレート送信時だけ利用できます。
 
-サブコマンドは、他とかぶらない prefix であれば短縮指定できます。たとえば `chatwork s` は `chatwork send`、`chatwork d f` は `chatwork download file` として扱います。`download` だけは例外で `chatwork dl` も受け付けます。prefix があいまいな場合はエラーになります。
+テンプレート送信時の送信先ルームは、次の優先順位で決定されます。
+
+1. `--room-id` (`--room` でも可)
+2. テンプレートの `room_id`
+3. `default_room_id`
+
+実際に送信する場合は `--dry-run` を外してください。
+
+### サブコマンド短縮
+
+サブコマンドは、他とかぶらない prefix であれば短縮指定できます。
+
+- `chatwork s`: `chatwork send`
+- `chatwork d f`: `chatwork download file`
+- `chatwork dl`: `chatwork download`
+
+prefix があいまいな場合はエラーになります。
 
 `bin/` に出力したバイナリを利用する場合は次のとおりです。
 
@@ -135,13 +206,3 @@ cargo run -- send --message '任意の本文です' --room-id 123456 --dry-run
 ./scripts/build --release
 ./bin/chatwork template list --config ./config/config.example.toml
 ```
-
-実際に送信する場合は `--dry-run` を外してください。
-
-`send` はテンプレート名か `--message` のどちらか一方だけを指定します。`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` はテンプレート送信時だけ利用できます。
-
-テンプレート送信時の送信先ルームは、次の優先順位で決定されます。
-
-1. `--room-id` (`--room` でも可)
-2. テンプレートの `room_id`
-3. `default_room_id`
