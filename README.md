@@ -1,50 +1,54 @@
 # chatwork-cli
 
-`clap` ベースの Chatwork 向け定型文送信 CLI です。
+A small Chatwork CLI built with `clap`.
 
-## できること
+- English: [README.md](./README.md)
+- 日本語: [docs/ja/README.md](./docs/ja/README.md)
 
-- テンプレート一覧の表示
-- テンプレート本文のプレビュー
-- 変数を差し込んだうえでの Chatwork 送信
-- 自分のアカウント情報の取得
-- Chatwork ファイルのダウンロード
+## Features
 
-## 前提
+- List available templates
+- Preview rendered template bodies
+- Send rendered template messages to Chatwork
+- Send ad-hoc messages without a template
+- Fetch your account, status, contacts, rooms, and messages
+- Download Chatwork files from IDs or message URLs
+
+## Requirements
 
 - Rust / Cargo
-- Chatwork API トークン
+- A Chatwork API token
 
-`CHATWORK_API_TOKEN` は次の優先順位で解決します。
+`CHATWORK_API_TOKEN` is resolved in this order:
 
-1. 通常の環境変数
-2. カレントディレクトリから親ディレクトリへ向かって探索した `.env`
+1. Regular environment variables
+2. `.env` found by searching from the current directory upward
 3. `~/.config/chatwork-cli/.env`
 
 ```bash
 export CHATWORK_API_TOKEN=your_token
 ```
 
-`.env` を利用する場合は、次の形式で設定してください。
+If you want to use `.env`, use this format:
 
 ```dotenv
 CHATWORK_API_TOKEN=your_token
 # CHATWORK_DEFAULT_DOWNLOAD_DIR=~/Downloads
 ```
 
-初期設定時は `.env.example` をコピーして `.env` を作成してください。`~/.config/chatwork-cli/.env` に配置して共通設定として使うこともできます。
+For first-time setup, copy `.env.example` to `.env`. You can also place it at `~/.config/chatwork-cli/.env` as a shared default.
 
 ```bash
 cp .env.example .env
 ```
 
-`./scripts/build` を実行すると、利用しやすい形で `bin/chatwork` にバイナリを配置できます。
+Running `./scripts/build` places a convenient binary at `bin/chatwork`.
 
-## 補完
+## Completion
 
-`chatwork completion <shell>` で補完スクリプトを標準出力へ出力できます。`completion` サブコマンドは設定ファイルがなくても利用できます。
+Use `chatwork completion <shell>` to print completion scripts. The `completion` subcommand works even without a config file.
 
-`send` および `template show` の位置では、設定ファイルから読み取ったテンプレート名も補完候補に表示されます。
+Template names from the config file are also suggested for `send` and `template show`.
 
 ```bash
 ./bin/chatwork completion bash > ~/.local/share/bash-completion/completions/chatwork
@@ -52,40 +56,42 @@ mkdir -p ~/.zfunc
 ./bin/chatwork completion zsh > ~/.zfunc/_chatwork
 ```
 
-`zsh` で利用する場合は、必要に応じて `~/.zshrc` に `fpath=(~/.zfunc $fpath)` および `autoload -Uz compinit && compinit` を追加してください。
+For `zsh`, add `fpath=(~/.zfunc $fpath)` and `autoload -Uz compinit && compinit` to `~/.zshrc` if needed.
 
 ## i18n
 
-CLI の実行時メッセージは gettext 風の `msgid` ベースで管理しています。翻訳カタログは `locale/<lang>/LC_MESSAGES/chatwork-cli.po` に配置します。既定では日本語カタログを内蔵しており、`CHATWORK_LOCALE` や `LANG` でロケールを切り替えられます。
+Runtime messages are managed with gettext-style `msgid`s. Translation catalogs live under `locale/<lang>/LC_MESSAGES/chatwork-cli.po`.
 
-外部カタログを利用する場合は、`CHATWORK_LOCALE_DIR` で `locale/` の配置先を上書きしてください。
+Japanese is embedded by default. You can switch locales with `CHATWORK_LOCALE` or `LANG`.
 
-## 設定ファイル
+If you want to load catalogs from another location, override `CHATWORK_LOCALE_DIR`.
 
-既定の設定ファイルパスは `~/.config/chatwork-cli/config.toml` です。サンプルは [config/config.example.toml](/home/ishii/work/myrepo/chatwork-cli/config/config.example.toml) にあります。
+## Configuration
 
-テンプレート本文は `body` に直接記述するか、`body_file` で外部ファイルを指定できます。`templates_prefix` を省略した場合の既定値は `~/.config/chatwork-cli/templates` です。`body_file` の相対パスはこのディレクトリを基準に解決されます。
+The default config file path is `~/.config/chatwork-cli/config.toml`. See [config/config.example.toml](/home/ishii/work/myrepo/chatwork-cli/config/config.example.toml) for an example.
+
+Template bodies can be written directly in `body` or loaded from files with `body_file`. If `templates_prefix` is omitted, the default is `~/.config/chatwork-cli/templates`. Relative `body_file` paths are resolved from that directory.
 
 ```toml
 default_room_id = "123456789"
 templates_prefix = "~/.config/chatwork-cli/templates"
 
 [templates.follow_up]
-description = "確認依頼のフォロー"
+description = "Follow-up request"
 body_file = "follow_up.txt"
 
 [templates.reminder]
 room_id = "987654321"
 body = """
-[info][title]リマインド[/title]
+[info][title]Reminder[/title]
 {{message}}
 [/info]
 """
 ```
 
-## 使い方
+## Usage
 
-### 情報取得
+### Fetch data
 
 ```bash
 cargo run -- get me
@@ -94,7 +100,7 @@ cargo run -- get status
 cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
 cargo run -- get contacts --aids=123,456 --format=json-minify
-cargo run -- get contacts --name-query=石 --format=json-minify
+cargo run -- get contacts --name-query=ishi --format=json-minify
 cargo run -- get room --room-id 123
 cargo run -- get room 'https://www.chatwork.com/#!rid123'
 cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid123'
@@ -107,24 +113,24 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123'
 cargo run -- get --chat-url 'https://www.chatwork.com/#!rid123-456'
 ```
 
-`get me` / `get status` / `get contacts` / `get room` / `get message` は、既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。
+`get me`, `get status`, `get contacts`, `get room`, and `get message` output pretty JSON by default. Use `--format=json-minify` for one-line JSON or `--format=plain` for a compact text view.
 
-`get my-status` は `get status` の互換名です。
+`get my-status` is an alias for `get status`.
 
-`get contacts` では、次の絞り込みが使えます。
+`get contacts` supports these filters:
 
-- `--aids=123,456`: 指定した `account_id` のコンタクトだけ返します。
-- `--name-query=石`: `name` を部分一致で絞り込みます。
-- `--aids` と `--name-query` は併用できます。
+- `--aids=123,456`: filter by exact `account_id`
+- `--name-query=ishi`: filter by partial `name`
+- `--aids` and `--name-query` can be combined
 
-Chatwork URL を `get` の直後または `--chat-url` で渡した場合は、自動で次のように振り分けます。
+If you pass a Chatwork URL directly to `get` or through `--chat-url`, it is routed automatically:
 
-- `#!rid<room_id>`: `get room`
-- `#!rid<room_id>-<message_id>`: `get message`
+- `#!rid<room_id>` -> `get room`
+- `#!rid<room_id>-<message_id>` -> `get message`
 
-`get room` / `get message` でも `--chat-url` と位置引数 `[CHAT_URL]` の両方を受け付けますが、同時指定はできません。
+`get room` and `get message` accept both `--chat-url` and positional `[CHAT_URL]`, but not at the same time.
 
-### ファイル取得
+### Download files
 
 ```bash
 cargo run -- download 'https://www.chatwork.com/#!rid32293227-2090707858361688064'
@@ -136,71 +142,73 @@ cargo run -- download file --room-id 123 --file-id 456 --output ./downloads/repo
 cargo run -- download file --room-id 123 --file-id 456 --out-dir ./downloads
 ```
 
-`download` は、item を省略した場合に暗黙的に `download file` として扱います。
+If the item is omitted, `download` is treated as `download file`.
 
-Chatwork のメッセージ URL を位置引数または `--chat-url` で渡すと、メッセージ本文中の `[download:...]` タグから `file_id` を解決してファイルを保存できます。明示的に指定したい場合は、`--room-id` と `--file-id` の組み合わせも使えます。
+When you pass a Chatwork message URL as a positional argument or with `--chat-url`, the CLI resolves `[download:...]` tags from the message body and saves the matched file.
 
-保存先の優先順位は次のとおりです。
+If you want to specify the target directly, use `--room-id` together with `--file-id`.
+
+The output path is resolved in this order:
 
 1. `--output`
 2. `--out-dir`
 3. `CHATWORK_DEFAULT_DOWNLOAD_DIR`
-4. カレントディレクトリ
+4. Current directory
 
-補足は次のとおりです。
+Notes:
 
-- `--output` を省略した場合は、API が返した `filename` をそのまま使います。
-- `--output` に既存ディレクトリを指定した場合は、その配下へ `filename` で保存します。
-- ディレクトリを明示する場合は `--out-dir` も使えます。
-- `--output` と `--out-dir` は同時指定できません。
-- 既存ファイルへ上書きする場合は `--force` を付けてください。
-- `[download:...]` タグが複数ある場合は、番号、範囲、カンマ区切り、または `A` / `all` で選択できます。
-- 空 Enter は `All` 扱いです。
+- If `--output` is omitted, the API `filename` is used as-is.
+- If `--output` points to an existing directory, the file is saved there using `filename`.
+- Use `--out-dir` when you want to specify a directory explicitly.
+- `--output` and `--out-dir` are mutually exclusive.
+- Use `--force` to overwrite an existing file.
+- If a message contains multiple `[download:...]` tags, you can choose files by number, range, comma-separated list, or `A` / `all`.
+- Pressing Enter with no input means `All`.
 
-### テンプレート操作
+### Template commands
 
 ```bash
 cargo run -- template list --config ./config/config.example.toml
-cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=見積
+cargo run -- template show follow_up --config ./config/config.example.toml --var to_id=12345 --var topic=quote
 ```
 
-### 送信
+### Send messages
 
 ```bash
-cargo run -- send follow_up --config ./config/config.example.toml --room-id 123456 --var to_id=12345 --var topic=見積 --dry-run
-cargo run -- send --message '任意の本文です' --room-id 123456 --dry-run
+cargo run -- send follow_up --config ./config/config.example.toml --room-id 123456 --var to_id=12345 --var topic=quote --dry-run
+cargo run -- send --message 'Free-form message body' --room-id 123456 --dry-run
 ```
 
-`send` はテンプレート名か `--message` のどちらか一方だけを指定します。
+`send` accepts either a template name or `--message`, but not both.
 
-`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` はテンプレート送信時だけ利用できます。
+When using `--message`, `--room-id` takes priority. If it is omitted, `default_room_id` is used. `--var` is available only for template sends.
 
-テンプレート送信時の送信先ルームは、次の優先順位で決定されます。
+For template sends, the destination room is resolved in this order:
 
-1. `--room-id` (`--room` でも可)
-2. テンプレートの `room_id`
+1. `--room-id` (or `--room`)
+2. Template `room_id`
 3. `default_room_id`
 
-実際に送信する場合は `--dry-run` を外してください。
+Remove `--dry-run` for a real send.
 
-### サブコマンド短縮
+### Subcommand shortcuts
 
-サブコマンドは、他とかぶらない prefix であれば短縮指定できます。
+Subcommands can be abbreviated as long as the prefix is unique.
 
 - `chatwork s`: `chatwork send`
 - `chatwork d f`: `chatwork download file`
 - `chatwork dl`: `chatwork download`
 
-prefix があいまいな場合はエラーになります。
+Ambiguous prefixes result in an error.
 
-`bin/` に出力したバイナリを利用する場合は次のとおりです。
+## Build the binary
 
 ```bash
 ./scripts/build
 ./bin/chatwork template list --config ./config/config.example.toml
 ```
 
-リリースビルドを配置する場合は次のとおりです。
+For a release build:
 
 ```bash
 ./scripts/build --release
