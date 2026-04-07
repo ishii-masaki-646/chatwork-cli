@@ -3,6 +3,8 @@ name = "chatwork-cli"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "A small Chatwork CLI tool built with clap"
+repository = "https://github.com/ishii-masaki-646/chatwork-cli"
 default-run = "chatwork"
 
 [[bin]]

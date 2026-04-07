@@ -8,8 +8,7 @@ const DEFAULT_LOCALE: &str = "ja";
 const DOMAIN: &str = "chatwork-cli";
 const LOCALE_DIR_ENV_NAME: &str = "CHATWORK_LOCALE_DIR";
 const LOCALE_ENV_NAMES: [&str; 4] = ["CHATWORK_LOCALE", "LC_ALL", "LC_MESSAGES", "LANG"];
-const BUILTIN_JA_CATALOG: &str =
-    include_str!("../locale/ja/LC_MESSAGES/chatwork-cli.po");
+const BUILTIN_JA_CATALOG: &str = include_str!("../locale/ja/LC_MESSAGES/chatwork-cli.po");
 
 static CATALOG: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
@@ -61,8 +60,14 @@ fn selected_locale() -> String {
 
 fn normalize_locale(value: &str) -> String {
     let without_encoding = value.split('.').next().unwrap_or(value);
-    let without_modifier = without_encoding.split('@').next().unwrap_or(without_encoding);
-    let primary = without_modifier.split('_').next().unwrap_or(without_modifier);
+    let without_modifier = without_encoding
+        .split('@')
+        .next()
+        .unwrap_or(without_encoding);
+    let primary = without_modifier
+        .split('_')
+        .next()
+        .unwrap_or(without_modifier);
 
     match primary {
         "" => DEFAULT_LOCALE.to_string(),
@@ -95,7 +100,12 @@ fn parse_po_catalog(content: &str) -> BTreeMap<String, String> {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            flush_entry(&mut messages, &mut current_msgid, &mut current_msgstr, &mut has_entry);
+            flush_entry(
+                &mut messages,
+                &mut current_msgid,
+                &mut current_msgstr,
+                &mut has_entry,
+            );
             active_field = ActiveField::None;
             continue;
         }
@@ -105,7 +115,12 @@ fn parse_po_catalog(content: &str) -> BTreeMap<String, String> {
         }
 
         if let Some(rest) = trimmed.strip_prefix("msgid ") {
-            flush_entry(&mut messages, &mut current_msgid, &mut current_msgstr, &mut has_entry);
+            flush_entry(
+                &mut messages,
+                &mut current_msgid,
+                &mut current_msgstr,
+                &mut has_entry,
+            );
             current_msgid = parse_po_string(rest);
             current_msgstr.clear();
             active_field = ActiveField::Msgid;
@@ -129,7 +144,12 @@ fn parse_po_catalog(content: &str) -> BTreeMap<String, String> {
         }
     }
 
-    flush_entry(&mut messages, &mut current_msgid, &mut current_msgstr, &mut has_entry);
+    flush_entry(
+        &mut messages,
+        &mut current_msgid,
+        &mut current_msgstr,
+        &mut has_entry,
+    );
     messages
 }
 
@@ -149,7 +169,10 @@ fn flush_entry(
 }
 
 fn parse_po_string(value: &str) -> String {
-    let Some(inner) = value.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else {
+    let Some(inner) = value
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
         return String::new();
     };
 

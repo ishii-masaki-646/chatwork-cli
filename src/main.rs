@@ -116,7 +116,11 @@ struct GetContactsArgs {
     output: GetOutputArgs,
 
     /// 対象 account_id をカンマ区切りで指定する
-    #[arg(long = "aids", value_name = "ACCOUNT_ID[,ACCOUNT_ID...]", value_delimiter = ',')]
+    #[arg(
+        long = "aids",
+        value_name = "ACCOUNT_ID[,ACCOUNT_ID...]",
+        value_delimiter = ','
+    )]
     aids: Vec<u64>,
 
     /// 名前で部分一致検索する
@@ -412,12 +416,8 @@ fn main() -> Result<()> {
     };
 
     let result = match cli.command {
-        Commands::Get { command } => {
-            handle_get_command(command)
-        }
-        Commands::Download { command } => {
-            handle_download_command(command)
-        }
+        Commands::Get { command } => handle_get_command(command),
+        Commands::Download { command } => handle_download_command(command),
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
             handle_template_command(command, &config)
@@ -514,7 +514,7 @@ fn infer_usage_context(args: &[OsString]) -> UsageContext {
         }
 
         match context {
-        CommandContext::Root => match text {
+            CommandContext::Root => match text {
                 "send" => return UsageContext::Send,
                 "download" => return UsageContext::DownloadFile,
                 "get" => context = CommandContext::Get,
@@ -588,7 +588,10 @@ fn translate_clap_error(err: &clap::Error, context: UsageContext) -> String {
         }
         ErrorKind::WrongNumberOfValues => {
             if let Some(arg) = clap_context_string(err, ContextKind::InvalidArg) {
-                trf("The number of values is invalid for {arg}.", &[("arg", &arg)])
+                trf(
+                    "The number of values is invalid for {arg}.",
+                    &[("arg", &arg)],
+                )
             } else {
                 tr("The number of values is invalid.")
             }
@@ -602,7 +605,10 @@ fn translate_clap_error(err: &clap::Error, context: UsageContext) -> String {
         }
         ErrorKind::InvalidSubcommand => {
             if let Some(subcommand) = clap_context_string(err, ContextKind::InvalidSubcommand) {
-                trf("Unknown subcommand: {subcommand}", &[("subcommand", &subcommand)])
+                trf(
+                    "Unknown subcommand: {subcommand}",
+                    &[("subcommand", &subcommand)],
+                )
             } else {
                 tr("Unknown subcommand.")
             }
@@ -642,7 +648,8 @@ fn clap_context_string(err: &clap::Error, kind: ContextKind) -> Option<String> {
 
 fn help_text(context: UsageContext) -> &'static str {
     match context {
-        UsageContext::Root => r#"Usage: chatwork [OPTIONS] <COMMAND>
+        UsageContext::Root => {
+            r#"Usage: chatwork [OPTIONS] <COMMAND>
        chatwork [OPTIONS] <PREFIX_COMMAND>
 
 Commands:
@@ -656,8 +663,10 @@ Commands:
 Options:
       --config <PATH>  設定ファイルのパス
   -h, --help           ヘルプを表示する
-  -V, --version        バージョンを表示する"#,
-        UsageContext::Get => r#"Usage: chatwork get [OPTIONS] <COMMAND>
+  -V, --version        バージョンを表示する"#
+        }
+        UsageContext::Get => {
+            r#"Usage: chatwork get [OPTIONS] <COMMAND>
        chatwork g [OPTIONS] <COMMAND>
        chatwork get [OPTIONS] [CHAT_URL]
        chatwork g [OPTIONS] [CHAT_URL]
@@ -679,8 +688,10 @@ Options:
       --config <PATH>  設定ファイルのパス
   -h, --help           ヘルプを表示する
 
-Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。--format は URL の前にも指定できます。"#,
-        UsageContext::GetRoom => r#"Usage: chatwork get room [OPTIONS] [CHAT_URL]
+Chatwork URL を get の直後または --chat-url で渡した場合は、#!rid<room_id> なら room、#!rid<room_id>-<message_id> なら message へ自動で振り分けます。--format は URL の前にも指定できます。"#
+        }
+        UsageContext::GetRoom => {
+            r#"Usage: chatwork get room [OPTIONS] [CHAT_URL]
        chatwork g room [OPTIONS] [CHAT_URL]
        chatwork g r [OPTIONS] [CHAT_URL]
 
@@ -692,8 +703,10 @@ Options:
       --chat-url <URL>     Chatwork ルーム URL
       --format <FORMAT>    出力形式
       --config <PATH>      設定ファイルのパス
-  -h, --help               ヘルプを表示する"#,
-        UsageContext::GetMessage => r#"Usage: chatwork get message [OPTIONS] [CHAT_URL]
+  -h, --help               ヘルプを表示する"#
+        }
+        UsageContext::GetMessage => {
+            r#"Usage: chatwork get message [OPTIONS] [CHAT_URL]
        chatwork g message [OPTIONS] [CHAT_URL]
 
 Arguments:
@@ -705,8 +718,10 @@ Options:
       --chat-url <URL>           Chatwork メッセージ URL
       --format <FORMAT>          出力形式
       --config <PATH>            設定ファイルのパス
-  -h, --help                     ヘルプを表示する"#,
-        UsageContext::DownloadFile => r#"Usage: chatwork download file [OPTIONS] [CHAT_URL]
+  -h, --help                     ヘルプを表示する"#
+        }
+        UsageContext::DownloadFile => {
+            r#"Usage: chatwork download file [OPTIONS] [CHAT_URL]
        chatwork download f [OPTIONS] [CHAT_URL]
        chatwork download [OPTIONS] [CHAT_URL]
        chatwork dl file [OPTIONS] [CHAT_URL]
@@ -727,8 +742,10 @@ Options:
       --output <PATH>      保存先ファイルパス
       --out-dir <DIR>      保存先ディレクトリ
       --force              既存ファイルを上書きする
-  -h, --help               ヘルプを表示する"#,
-        UsageContext::Template => r#"Usage: chatwork template [OPTIONS] <COMMAND>
+  -h, --help               ヘルプを表示する"#
+        }
+        UsageContext::Template => {
+            r#"Usage: chatwork template [OPTIONS] <COMMAND>
        chatwork t [OPTIONS] <COMMAND>
 
 Commands:
@@ -738,8 +755,10 @@ Commands:
 
 Options:
       --config <PATH>  設定ファイルのパス
-  -h, --help           ヘルプを表示する"#,
-        UsageContext::TemplateShow => r#"Usage: chatwork template show [OPTIONS] <NAME>
+  -h, --help           ヘルプを表示する"#
+        }
+        UsageContext::TemplateShow => {
+            r#"Usage: chatwork template show [OPTIONS] <NAME>
        chatwork t s [OPTIONS] <NAME>
 
 Arguments:
@@ -748,8 +767,10 @@ Arguments:
 Options:
       --config <PATH>    設定ファイルのパス
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
-  -h, --help             ヘルプを表示する"#,
-        UsageContext::Send => r#"Usage: chatwork send [OPTIONS] <NAME>
+  -h, --help             ヘルプを表示する"#
+        }
+        UsageContext::Send => {
+            r#"Usage: chatwork send [OPTIONS] <NAME>
        chatwork s [OPTIONS] <NAME>
        chatwork send [OPTIONS] --message <MESSAGE>
        chatwork s [OPTIONS] --message <MESSAGE>
@@ -764,7 +785,8 @@ Options:
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
       --self-unread      自分を未読にする
       --dry-run          実際には送らず本文だけ表示する
-  -h, --help             ヘルプを表示する"#,
+  -h, --help             ヘルプを表示する"#
+        }
     }
 }
 
@@ -881,7 +903,8 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
             continue;
         }
 
-        if pending_download_default_index.is_some() && !matches!(context, CommandContext::Download) {
+        if pending_download_default_index.is_some() && !matches!(context, CommandContext::Download)
+        {
             download_item_seen = true;
         }
         normalized.push(arg);
@@ -899,7 +922,17 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
 fn long_option_takes_value(name: &str) -> bool {
     matches!(
         name,
-        "config" | "format" | "chat-url" | "output" | "out-dir" | "room-id" | "file-id" | "message-id" | "room" | "message" | "var"
+        "config"
+            | "format"
+            | "chat-url"
+            | "output"
+            | "out-dir"
+            | "room-id"
+            | "file-id"
+            | "message-id"
+            | "room"
+            | "message"
+            | "var"
     )
 }
 
@@ -910,7 +943,15 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
 
     let candidates = match context {
         CommandContext::Root => &["get", "download", "template", "send", "completion", "help"][..],
-        CommandContext::Get => &["me", "status", "my-status", "contacts", "room", "message", "help"][..],
+        CommandContext::Get => &[
+            "me",
+            "status",
+            "my-status",
+            "contacts",
+            "room",
+            "message",
+            "help",
+        ][..],
         CommandContext::Download => &["file", "help"][..],
         CommandContext::Template => &["list", "show", "help"][..],
         CommandContext::Leaf => &[][..],
@@ -991,7 +1032,12 @@ fn handle_completion_command(args: CompletionArgs) {
         CompletionShell::Zsh => print!("{}", shell_completion::script(ShellScript::Zsh)),
         other => {
             let mut command = Cli::command();
-            generate(other.into_shell(), &mut command, "chatwork", &mut io::stdout());
+            generate(
+                other.into_shell(),
+                &mut command,
+                "chatwork",
+                &mut io::stdout(),
+            );
         }
     }
 }
@@ -1058,7 +1104,11 @@ fn handle_download_command(command: DownloadCommand) -> Result<()> {
         DownloadCommand::File(args) => {
             let token = load_api_token()?;
             let files = resolve_download_files(DEFAULT_BASE_URL, &token, &args)?;
-            validate_download_destination_args(args.output.as_deref(), args.out_dir.as_deref(), files.len())?;
+            validate_download_destination_args(
+                args.output.as_deref(),
+                args.out_dir.as_deref(),
+                files.len(),
+            )?;
 
             for file in files {
                 let download_url = file
@@ -1089,7 +1139,11 @@ fn handle_download_command(command: DownloadCommand) -> Result<()> {
     Ok(())
 }
 
-fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) -> Result<Vec<RoomFileResponse>> {
+fn resolve_download_files(
+    base_url: &str,
+    token: &str,
+    args: &DownloadFileArgs,
+) -> Result<Vec<RoomFileResponse>> {
     if args.chat_url.is_some() && args.chat_url_arg.is_some() {
         return Err(usage_error(
             UsageContext::DownloadFile,
@@ -1100,11 +1154,16 @@ fn resolve_download_files(base_url: &str, token: &str, args: &DownloadFileArgs) 
     let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
 
     match (args.room_id, args.file_id, chat_url) {
-        (Some(room_id), Some(file_id), None) => {
-            Ok(vec![get_room_file(DEFAULT_BASE_URL, token, room_id, file_id, true)?])
-        }
+        (Some(room_id), Some(file_id), None) => Ok(vec![get_room_file(
+            DEFAULT_BASE_URL,
+            token,
+            room_id,
+            file_id,
+            true,
+        )?]),
         (None, None, Some(chat_url)) => {
-            let (room_id, message_id) = parse_chatwork_message_url(chat_url, UsageContext::DownloadFile)?;
+            let (room_id, message_id) =
+                parse_chatwork_message_url(chat_url, UsageContext::DownloadFile)?;
             let message = get_room_message(base_url, token, room_id, message_id)?;
             let tags = extract_download_tags(&message.body)?;
             let selected_tags = select_download_tags(&tags)?;
@@ -1163,7 +1222,8 @@ fn handle_template_command(command: TemplateCommand, config: &Config) -> Result<
         }
         TemplateCommand::Show(args) => {
             let template = get_template(config, &args.name, UsageContext::TemplateShow)?;
-            let body = resolve_template_body(config, &args.name, template, UsageContext::TemplateShow)?;
+            let body =
+                resolve_template_body(config, &args.name, template, UsageContext::TemplateShow)?;
             let vars = parse_vars(&args.vars, UsageContext::TemplateShow)?;
             let rendered = render_template(&body, &vars, UsageContext::TemplateShow)?;
             println!("{rendered}");
@@ -1183,13 +1243,7 @@ fn handle_send_command(args: SendArgs, config: Option<&Config>) -> Result<()> {
 
     let token = load_api_token()?;
 
-    let message_id = send_message(
-        &base_url,
-        &token,
-        &room_id,
-        &rendered,
-        args.self_unread,
-    )?;
+    let message_id = send_message(&base_url, &token, &room_id, &rendered, args.self_unread)?;
     println!(
         "{}",
         trf(
@@ -1201,7 +1255,10 @@ fn handle_send_command(args: SendArgs, config: Option<&Config>) -> Result<()> {
     Ok(())
 }
 
-fn resolve_send_request(args: &SendArgs, config: Option<&Config>) -> Result<(String, String, String)> {
+fn resolve_send_request(
+    args: &SendArgs,
+    config: Option<&Config>,
+) -> Result<(String, String, String)> {
     match (&args.name, &args.message) {
         (Some(_), Some(_)) => Err(usage_error(
             UsageContext::Send,
@@ -1255,7 +1312,11 @@ fn get_api_json<T>(base_url: &str, token: &str, path: &str) -> Result<T>
 where
     T: DeserializeOwned,
 {
-    let endpoint = format!("{}/{}", base_url.trim_end_matches('/'), path.trim_start_matches('/'));
+    let endpoint = format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
     let client = Client::new();
     let response = client
         .get(endpoint)
@@ -1296,7 +1357,10 @@ fn get_room_file(
     let response = client
         .get(endpoint)
         .header("X-ChatWorkToken", token)
-        .query(&[("create_download_url", if create_download_url { 1 } else { 0 })])
+        .query(&[(
+            "create_download_url",
+            if create_download_url { 1 } else { 0 },
+        )])
         .send()
         .context(tr("Failed to send request to Chatwork API."))?;
 
@@ -1318,12 +1382,30 @@ fn get_room_file(
     serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
 }
 
-fn get_room_message(base_url: &str, token: &str, room_id: u64, message_id: u64) -> Result<RoomMessageResponse> {
-    get_api_json(base_url, token, &format!("/rooms/{room_id}/messages/{message_id}"))
+fn get_room_message(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    message_id: u64,
+) -> Result<RoomMessageResponse> {
+    get_api_json(
+        base_url,
+        token,
+        &format!("/rooms/{room_id}/messages/{message_id}"),
+    )
 }
 
-fn get_room_message_json(base_url: &str, token: &str, room_id: u64, message_id: u64) -> Result<serde_json::Value> {
-    get_api_json(base_url, token, &format!("/rooms/{room_id}/messages/{message_id}"))
+fn get_room_message_json(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    message_id: u64,
+) -> Result<serde_json::Value> {
+    get_api_json(
+        base_url,
+        token,
+        &format!("/rooms/{room_id}/messages/{message_id}"),
+    )
 }
 
 fn get_room(base_url: &str, token: &str, room_id: u64) -> Result<serde_json::Value> {
@@ -1416,15 +1498,19 @@ fn resolve_get_message_ids(args: &GetMessageArgs) -> Result<(u64, u64)> {
 
     match (args.room_id, args.message_id, chat_url) {
         (Some(room_id), Some(message_id), None) => Ok((room_id, message_id)),
-        (None, None, Some(chat_url)) => parse_chatwork_message_url(chat_url, UsageContext::GetMessage),
+        (None, None, Some(chat_url)) => {
+            parse_chatwork_message_url(chat_url, UsageContext::GetMessage)
+        }
         (Some(_), None, None) | (None, Some(_), None) => Err(usage_error(
             UsageContext::GetMessage,
             tr("Specify both --room-id and --message-id."),
         )),
-        (Some(_), Some(_), Some(_)) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => Err(usage_error(
-            UsageContext::GetMessage,
-            tr("Specify either a message URL or the pair of --room-id and --message-id."),
-        )),
+        (Some(_), Some(_), Some(_)) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
+            Err(usage_error(
+                UsageContext::GetMessage,
+                tr("Specify either a message URL or the pair of --room-id and --message-id."),
+            ))
+        }
         (None, None, None) => Err(usage_error(
             UsageContext::GetMessage,
             tr("Specify either a message URL or the pair of --room-id and --message-id."),
@@ -1445,10 +1531,12 @@ fn parse_chatwork_message_url(url: &str, context: UsageContext) -> Result<(u64, 
 }
 
 fn parse_chatwork_url(url: &str, context: UsageContext) -> Result<(u64, Option<u64>)> {
-    let (room_id, message_id) = parse_chatwork_url_parts(url).ok_or_else(|| usage_error(
-        context,
-        tr("The URL must contain `#!rid<room_id>` or `#!rid<room_id>-<message_id>`."),
-    ))?;
+    let (room_id, message_id) = parse_chatwork_url_parts(url).ok_or_else(|| {
+        usage_error(
+            context,
+            tr("The URL must contain `#!rid<room_id>` or `#!rid<room_id>-<message_id>`."),
+        )
+    })?;
 
     Ok((room_id, message_id))
 }
@@ -1492,23 +1580,29 @@ fn extract_download_tags(body: &str) -> Result<Vec<DownloadTag>> {
 
     while let Some(start) = rest.find(marker) {
         let after_start = &rest[start + marker.len()..];
-        let end = after_start
-            .find(']')
-            .ok_or_else(|| usage_error(UsageContext::DownloadFile, tr("Missing closing `]` for download tag.")))?;
-        let id_text = after_start[..end].trim();
-        let file_id = id_text
-            .parse::<u64>()
-            .map_err(|_| usage_error(
+        let end = after_start.find(']').ok_or_else(|| {
+            usage_error(
                 UsageContext::DownloadFile,
-                trf("Failed to parse file_id from download tag: {tag}", &[("tag", id_text)]),
-            ))?;
+                tr("Missing closing `]` for download tag."),
+            )
+        })?;
+        let id_text = after_start[..end].trim();
+        let file_id = id_text.parse::<u64>().map_err(|_| {
+            usage_error(
+                UsageContext::DownloadFile,
+                trf(
+                    "Failed to parse file_id from download tag: {tag}",
+                    &[("tag", id_text)],
+                ),
+            )
+        })?;
         let after_open_tag = &after_start[end + 1..];
-        let close_index = after_open_tag
-            .find(closing_tag)
-            .ok_or_else(|| usage_error(
+        let close_index = after_open_tag.find(closing_tag).ok_or_else(|| {
+            usage_error(
                 UsageContext::DownloadFile,
                 tr("Missing closing `[/download]` for download tag."),
-            ))?;
+            )
+        })?;
         let label = after_open_tag[..close_index].trim().to_string();
         tags.push(DownloadTag { file_id, label });
         rest = &after_open_tag[close_index + closing_tag.len()..];
@@ -1537,9 +1631,18 @@ fn prompt_download_selection(tags: &[DownloadTag]) -> Result<Vec<DownloadTag>> {
     loop {
         writeln!(stdout, "{}", tr("Multiple download tags were found:"))?;
         for (index, tag) in tags.iter().enumerate() {
-            writeln!(stdout, "{}. {} (file_id={})", index + 1, tag.label, tag.file_id)?;
+            writeln!(
+                stdout,
+                "{}. {} (file_id={})",
+                index + 1,
+                tag.label,
+                tag.file_id
+            )?;
         }
-        let input = read_selection_line(&mut stdout, &tr("Select numbers, ranges, or [A]ll (default: All):"))?;
+        let input = read_selection_line(
+            &mut stdout,
+            &tr("Select numbers, ranges, or [A]ll (default: All):"),
+        )?;
         if let Some(selected) = parse_download_selection_input(input.trim(), tags) {
             return Ok(selected);
         }
@@ -1621,7 +1724,11 @@ fn parse_download_selection_input(input: &str, tags: &[DownloadTag]) -> Option<V
     }
 }
 
-fn validate_download_destination_args(output: Option<&Path>, out_dir: Option<&Path>, file_count: usize) -> Result<()> {
+fn validate_download_destination_args(
+    output: Option<&Path>,
+    out_dir: Option<&Path>,
+    file_count: usize,
+) -> Result<()> {
     if output.is_some() && out_dir.is_some() {
         return Err(usage_error(
             UsageContext::DownloadFile,
@@ -1644,7 +1751,11 @@ fn validate_download_destination_args(output: Option<&Path>, out_dir: Option<&Pa
     Ok(())
 }
 
-fn resolve_download_output_path(filename: &str, output: Option<&Path>, out_dir: Option<&Path>) -> PathBuf {
+fn resolve_download_output_path(
+    filename: &str,
+    output: Option<&Path>,
+    out_dir: Option<&Path>,
+) -> PathBuf {
     if let Some(dir) = out_dir {
         return expand_home(dir).join(filename);
     }
@@ -1682,7 +1793,10 @@ fn ensure_output_writable(path: &Path, force: bool) -> Result<()> {
         );
     }
 
-    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent).with_context(|| {
             trf(
                 "Failed to create output directory: {path}",
@@ -1890,10 +2004,12 @@ fn plain_value_text(value: &serde_json::Value) -> Result<String> {
 }
 
 fn get_template<'a>(config: &'a Config, name: &str, context: UsageContext) -> Result<&'a Template> {
-    config
-        .templates
-        .get(name)
-        .ok_or_else(|| usage_error(context, trf("Template `{name}` was not found.", &[("name", name)])))
+    config.templates.get(name).ok_or_else(|| {
+        usage_error(
+            context,
+            trf("Template `{name}` was not found.", &[("name", name)]),
+        )
+    })
 }
 
 fn resolve_template_body(
@@ -1923,15 +2039,21 @@ fn resolve_template_body(
     }
 }
 
-fn resolve_template_send_room_id(args: &SendArgs, config: &Config, template: &Template) -> Result<String> {
+fn resolve_template_send_room_id(
+    args: &SendArgs,
+    config: &Config,
+    template: &Template,
+) -> Result<String> {
     args.room_id
         .clone()
         .or_else(|| template.room_id.clone())
         .or_else(|| config.default_room_id.clone())
-        .ok_or_else(|| usage_error(
-            UsageContext::Send,
-            tr("Specify one of --room-id, template room_id, or default_room_id."),
-        ))
+        .ok_or_else(|| {
+            usage_error(
+                UsageContext::Send,
+                tr("Specify one of --room-id, template room_id, or default_room_id."),
+            )
+        })
 }
 
 fn resolve_raw_message_room_id(args: &SendArgs, config: Option<&Config>) -> Result<String> {
@@ -1950,13 +2072,22 @@ fn parse_vars(items: &[String], context: UsageContext) -> Result<BTreeMap<String
     let mut vars = BTreeMap::new();
 
     for item in items {
-        let (key, value) = item
-            .split_once('=')
-            .ok_or_else(|| usage_error(context, trf("`{item}` must use KEY=VALUE format.", &[("item", item)])))?;
+        let (key, value) = item.split_once('=').ok_or_else(|| {
+            usage_error(
+                context,
+                trf("`{item}` must use KEY=VALUE format.", &[("item", item)]),
+            )
+        })?;
         let key = key.trim();
 
         if key.is_empty() {
-            return Err(usage_error(context, trf("Variable names cannot be empty: `{item}`", &[("item", item)])));
+            return Err(usage_error(
+                context,
+                trf(
+                    "Variable names cannot be empty: `{item}`",
+                    &[("item", item)],
+                ),
+            ));
         }
 
         vars.insert(key.to_string(), value.to_string());
@@ -1989,25 +2120,38 @@ fn resolve_templates_prefix(config: &Config) -> PathBuf {
     }
 }
 
-fn render_template(body: &str, vars: &BTreeMap<String, String>, context: UsageContext) -> Result<String> {
+fn render_template(
+    body: &str,
+    vars: &BTreeMap<String, String>,
+    context: UsageContext,
+) -> Result<String> {
     let mut rendered = String::with_capacity(body.len());
     let mut rest = body;
 
     while let Some(start) = rest.find("{{") {
         rendered.push_str(&rest[..start]);
         let after_start = &rest[start + 2..];
-        let end = after_start
-            .find("}}")
-            .ok_or_else(|| usage_error(context, tr("Missing closing `}}` for template placeholder.")))?;
+        let end = after_start.find("}}").ok_or_else(|| {
+            usage_error(
+                context,
+                tr("Missing closing `}}` for template placeholder."),
+            )
+        })?;
         let key = after_start[..end].trim();
 
         if key.is_empty() {
-            return Err(usage_error(context, tr("Empty placeholder names are not allowed.")));
+            return Err(usage_error(
+                context,
+                tr("Empty placeholder names are not allowed."),
+            ));
         }
 
-        let value = vars
-            .get(key)
-            .ok_or_else(|| usage_error(context, trf("Variable `{key}` is not set.", &[("key", key)])))?;
+        let value = vars.get(key).ok_or_else(|| {
+            usage_error(
+                context,
+                trf("Variable `{key}` is not set.", &[("key", key)]),
+            )
+        })?;
         rendered.push_str(value);
         rest = &after_start[end + 2..];
     }
@@ -2036,12 +2180,16 @@ fn default_templates_prefix() -> PathBuf {
             .join("chatwork-cli")
             .join("templates")
     } else {
-        PathBuf::from(".config").join("chatwork-cli").join("templates")
+        PathBuf::from(".config")
+            .join("chatwork-cli")
+            .join("templates")
     }
 }
 
 fn fallback_dotenv_path() -> Option<PathBuf> {
-    env::var("HOME").ok().map(|home| default_dotenv_path_for_home(Path::new(&home)))
+    env::var("HOME")
+        .ok()
+        .map(|home| default_dotenv_path_for_home(Path::new(&home)))
 }
 
 fn default_dotenv_path_for_home(home: &Path) -> PathBuf {
@@ -2067,8 +2215,12 @@ fn expand_home(path: &Path) -> PathBuf {
 }
 
 fn load_config(path: &Path) -> Result<Config> {
-    let content = fs::read_to_string(path)
-        .with_context(|| trf("Failed to read config file: {path}", &[("path", &path.display().to_string())]))?;
+    let content = fs::read_to_string(path).with_context(|| {
+        trf(
+            "Failed to read config file: {path}",
+            &[("path", &path.display().to_string())],
+        )
+    })?;
     let mut config: Config = toml::from_str(&content).with_context(|| {
         trf(
             "Failed to parse TOML config: {path}",
@@ -2184,7 +2336,8 @@ mod tests {
             ("name".to_string(), "あい".to_string()),
             ("topic".to_string(), "定型文".to_string()),
         ]);
-        let rendered = render_template("{{name}} が {{topic}} を送る", &vars, UsageContext::Send).unwrap();
+        let rendered =
+            render_template("{{name}} が {{topic}} を送る", &vars, UsageContext::Send).unwrap();
         assert_eq!(rendered, "あい が 定型文 を送る");
     }
 
@@ -2221,7 +2374,12 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Me(GetOutputArgs { format: GetFormat::Json })));
+                assert!(matches!(
+                    command,
+                    GetCommand::Me(GetOutputArgs {
+                        format: GetFormat::Json
+                    })
+                ));
             }
             _ => panic!("get command was not parsed"),
         }
@@ -2233,7 +2391,12 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Me(GetOutputArgs { format: GetFormat::Plain })));
+                assert!(matches!(
+                    command,
+                    GetCommand::Me(GetOutputArgs {
+                        format: GetFormat::Plain
+                    })
+                ));
             }
             _ => panic!("get command was not parsed"),
         }
@@ -2245,7 +2408,12 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Status(GetOutputArgs { format: GetFormat::Json })));
+                assert!(matches!(
+                    command,
+                    GetCommand::Status(GetOutputArgs {
+                        format: GetFormat::Json
+                    })
+                ));
             }
             _ => panic!("get status command was not parsed"),
         }
@@ -2260,7 +2428,9 @@ mod tests {
                 assert!(matches!(
                     command,
                     GetCommand::Contacts(GetContactsArgs {
-                        output: GetOutputArgs { format: GetFormat::Plain },
+                        output: GetOutputArgs {
+                            format: GetFormat::Plain
+                        },
                         ..
                     })
                 ));
@@ -2398,20 +2568,25 @@ mod tests {
 
     #[test]
     fn get_room_command_parses_chat_url_as_positional_argument() {
-        let cli = Cli::try_parse_from(["chatwork", "get", "room", "https://www.chatwork.com/#!rid12345678"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "get",
+            "room",
+            "https://www.chatwork.com/#!rid12345678",
+        ])
+        .unwrap();
 
         match cli.command {
-            Commands::Get { command } => match command {
-                GetCommand::Room(args) => {
-                    assert_eq!(args.room_id, None);
-                    assert_eq!(args.chat_url, None);
-                    assert_eq!(
-                        args.chat_url_arg.as_deref(),
-                        Some("https://www.chatwork.com/#!rid12345678")
-                    );
-                }
-                _ => panic!("get room command was not parsed"),
-            },
+            Commands::Get {
+                command: GetCommand::Room(args),
+            } => {
+                assert_eq!(args.room_id, None);
+                assert_eq!(args.chat_url, None);
+                assert_eq!(
+                    args.chat_url_arg.as_deref(),
+                    Some("https://www.chatwork.com/#!rid12345678")
+                );
+            }
             _ => panic!("get room command was not parsed"),
         }
     }
@@ -2427,18 +2602,17 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Commands::Get { command } => match command {
-                GetCommand::Message(args) => {
-                    assert_eq!(args.room_id, None);
-                    assert_eq!(args.message_id, None);
-                    assert_eq!(args.chat_url, None);
-                    assert_eq!(
-                        args.chat_url_arg.as_deref(),
-                        Some("https://www.chatwork.com/#!rid12345678-1234567890123456789")
-                    );
-                }
-                _ => panic!("get message command was not parsed"),
-            },
+            Commands::Get {
+                command: GetCommand::Message(args),
+            } => {
+                assert_eq!(args.room_id, None);
+                assert_eq!(args.message_id, None);
+                assert_eq!(args.chat_url, None);
+                assert_eq!(
+                    args.chat_url_arg.as_deref(),
+                    Some("https://www.chatwork.com/#!rid12345678-1234567890123456789")
+                );
+            }
             _ => panic!("get message command was not parsed"),
         }
     }
@@ -2449,7 +2623,12 @@ mod tests {
 
         match cli.command {
             Commands::Get { command } => {
-                assert!(matches!(command, GetCommand::Status(GetOutputArgs { format: GetFormat::Json })));
+                assert!(matches!(
+                    command,
+                    GetCommand::Status(GetOutputArgs {
+                        format: GetFormat::Json
+                    })
+                ));
             }
             _ => panic!("get my-status command was not parsed"),
         }
@@ -2566,12 +2745,7 @@ mod tests {
 
     #[test]
     fn normalize_cli_args_expands_special_download_alias() {
-        let args = normalize_cli_args(vec![
-            "chatwork".into(),
-            "dl".into(),
-            "f".into(),
-        ])
-        .unwrap();
+        let args = normalize_cli_args(vec!["chatwork".into(), "dl".into(), "f".into()]).unwrap();
 
         assert_eq!(
             args,
@@ -2650,12 +2824,7 @@ mod tests {
 
     #[test]
     fn normalize_cli_args_rejects_ambiguous_subcommand_prefix() {
-        let err = normalize_cli_args(vec![
-            "chatwork".into(),
-            "g".into(),
-            "m".into(),
-        ])
-        .unwrap_err();
+        let err = normalize_cli_args(vec!["chatwork".into(), "g".into(), "m".into()]).unwrap_err();
 
         assert_eq!(
             err.to_string(),
@@ -2791,7 +2960,10 @@ mod tests {
 
         let path = resolve_download_output_path("report.txt", None, None);
 
-        assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+        assert_eq!(
+            path,
+            Path::new("/tmp/chatwork-cli-home/Downloads/report.txt")
+        );
 
         match previous_default_download_dir {
             Some(value) => env::set_var(DEFAULT_DOWNLOAD_DIR_ENV_NAME, value),
@@ -2805,12 +2977,11 @@ mod tests {
 
     #[test]
     fn parse_chatwork_message_url_reads_room_and_message_ids() {
-        let (room_id, message_id) =
-            parse_chatwork_message_url(
-                "https://www.chatwork.com/#!rid12345678-1234567890123456789",
-                UsageContext::GetMessage,
-            )
-                .unwrap();
+        let (room_id, message_id) = parse_chatwork_message_url(
+            "https://www.chatwork.com/#!rid12345678-1234567890123456789",
+            UsageContext::GetMessage,
+        )
+        .unwrap();
         assert_eq!(room_id, 12345678);
         assert_eq!(message_id, 1234567890123456789);
     }
@@ -2827,10 +2998,9 @@ mod tests {
 
     #[test]
     fn extract_download_tags_reads_single_tag() {
-        let tags = extract_download_tags(
-            "[info][download:1234567890]file.zip (1 KB)[/download][/info]",
-        )
-        .unwrap();
+        let tags =
+            extract_download_tags("[info][download:1234567890]file.zip (1 KB)[/download][/info]")
+                .unwrap();
         assert_eq!(
             tags,
             vec![DownloadTag {
@@ -2842,10 +3012,9 @@ mod tests {
 
     #[test]
     fn extract_download_tags_reads_multiple_tags() {
-        let tags = extract_download_tags(
-            "[download:1]a.zip[/download]\n[download:2]b.zip[/download]",
-        )
-        .unwrap();
+        let tags =
+            extract_download_tags("[download:1]a.zip[/download]\n[download:2]b.zip[/download]")
+                .unwrap();
         assert_eq!(
             tags,
             vec![
@@ -2874,10 +3043,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(
-            parse_download_selection_input("", &tags),
-            Some(tags),
-        );
+        assert_eq!(parse_download_selection_input("", &tags), Some(tags),);
     }
 
     #[test]
@@ -2978,8 +3144,15 @@ mod tests {
         let _guard = env_lock();
         let previous_home = env::var_os("HOME");
         env::set_var("HOME", "/tmp/chatwork-cli-home");
-        let path = resolve_download_output_path("report.txt", Some(Path::new("~/Downloads/report.txt")), None);
-        assert_eq!(path, Path::new("/tmp/chatwork-cli-home/Downloads/report.txt"));
+        let path = resolve_download_output_path(
+            "report.txt",
+            Some(Path::new("~/Downloads/report.txt")),
+            None,
+        );
+        assert_eq!(
+            path,
+            Path::new("/tmp/chatwork-cli-home/Downloads/report.txt")
+        );
         match previous_home {
             Some(value) => env::set_var("HOME", value),
             None => env::remove_var("HOME"),
@@ -2988,7 +3161,8 @@ mod tests {
 
     #[test]
     fn resolve_download_output_path_uses_filename_when_output_is_directory() {
-        let dir = temp_test_dir("resolve_download_output_path_uses_filename_when_output_is_directory");
+        let dir =
+            temp_test_dir("resolve_download_output_path_uses_filename_when_output_is_directory");
         fs::create_dir_all(&dir).unwrap();
         let path = resolve_download_output_path("report.txt", Some(&dir), None);
         assert_eq!(path, dir.join("report.txt"));
@@ -2997,7 +3171,8 @@ mod tests {
 
     #[test]
     fn resolve_download_output_path_uses_out_dir() {
-        let path = resolve_download_output_path("report.txt", None, Some(Path::new("/tmp/downloads")));
+        let path =
+            resolve_download_output_path("report.txt", None, Some(Path::new("/tmp/downloads")));
         assert_eq!(path, Path::new("/tmp/downloads/report.txt"));
     }
 
@@ -3009,13 +3184,16 @@ mod tests {
             1,
         )
         .unwrap_err();
-        assert_eq!(err.to_string(), tr("Specify either --output or --out-dir, not both."));
+        assert_eq!(
+            err.to_string(),
+            tr("Specify either --output or --out-dir, not both.")
+        );
     }
 
     #[test]
     fn validate_download_destination_args_rejects_single_output_path_for_multiple_files() {
-        let err =
-            validate_download_destination_args(Some(Path::new("/tmp/report.txt")), None, 2).unwrap_err();
+        let err = validate_download_destination_args(Some(Path::new("/tmp/report.txt")), None, 2)
+            .unwrap_err();
         assert_eq!(
             err.to_string(),
             tr("Downloading multiple files requires --out-dir, an existing directory passed to --output, or no output path."),
@@ -3025,7 +3203,10 @@ mod tests {
     #[test]
     fn default_dotenv_path_for_home_uses_config_directory() {
         let path = default_dotenv_path_for_home(Path::new("/tmp/example-home"));
-        assert_eq!(path, Path::new("/tmp/example-home/.config/chatwork-cli/.env"));
+        assert_eq!(
+            path,
+            Path::new("/tmp/example-home/.config/chatwork-cli/.env")
+        );
     }
 
     #[test]
@@ -3033,7 +3214,11 @@ mod tests {
         let dir = temp_test_dir("load_config_parses_templates");
         let templates_dir = dir.join("templates");
         fs::create_dir_all(&templates_dir).unwrap();
-        fs::write(templates_dir.join("greeting.txt"), "こんにちは、{{name}}さん\n").unwrap();
+        fs::write(
+            templates_dir.join("greeting.txt"),
+            "こんにちは、{{name}}さん\n",
+        )
+        .unwrap();
         let config_path = dir.join("config.toml");
         fs::write(
             &config_path,
@@ -3055,7 +3240,8 @@ body_file = "greeting.txt"
         assert_eq!(config.templates_prefix.as_deref(), Some("./templates"));
         assert_eq!(template.description.as_deref(), Some("あいさつ"));
         assert_eq!(
-            resolve_template_body(&config, "greeting", template, UsageContext::TemplateShow).unwrap(),
+            resolve_template_body(&config, "greeting", template, UsageContext::TemplateShow)
+                .unwrap(),
             "こんにちは、{{name}}さん\n"
         );
 
@@ -3215,16 +3401,23 @@ body_file = "invalid.txt"
         let err = Cli::try_parse_from(["chatwork", "--config"]).unwrap_err();
         assert_eq!(
             translate_clap_error(&err, UsageContext::Root),
-            trf("A value is required for {arg}.", &[("arg", "--config <PATH>")])
+            trf(
+                "A value is required for {arg}.",
+                &[("arg", "--config <PATH>")]
+            )
         );
     }
 
     #[test]
     fn translate_clap_error_localizes_invalid_option_value() {
-        let err = Cli::try_parse_from(["chatwork", "download", "file", "--room-id", "abc"]).unwrap_err();
+        let err =
+            Cli::try_parse_from(["chatwork", "download", "file", "--room-id", "abc"]).unwrap_err();
         assert_eq!(
             translate_clap_error(&err, UsageContext::DownloadFile),
-            trf("Invalid value for {arg}: {value}", &[("arg", "--room-id <ROOM_ID>"), ("value", "abc")])
+            trf(
+                "Invalid value for {arg}: {value}",
+                &[("arg", "--room-id <ROOM_ID>"), ("value", "abc")]
+            )
         );
     }
 
