@@ -230,3 +230,18 @@ msgstr "{arg} は {other} と同時に使えません。"
 
 msgid "The specified arguments cannot be used together."
 msgstr "指定された引数の組み合わせは使えません。"
+
+msgid "File not found: {path}"
+msgstr "ファイルが見つかりません: {path}"
+
+msgid "Failed to read file metadata: {path}"
+msgstr "ファイルのメタデータを読み取れませんでした: {path}"
+
+msgid "File size exceeds the 5 MB limit: {path}"
+msgstr "ファイルサイズが 5 MB の上限を超えています: {path}"
+
+msgid "Uploaded the file. file_id={file_id}"
+msgstr "ファイルをアップロードしました。file_id={file_id}"
+
+msgid "Failed to read file: {path}"
+msgstr "ファイルの読み込みに失敗しました: {path}"

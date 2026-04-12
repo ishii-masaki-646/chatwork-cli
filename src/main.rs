@@ -57,6 +57,11 @@ enum Commands {
         #[command(subcommand)]
         command: DownloadCommand,
     },
+    /// ファイルをアップロードする
+    Upload {
+        #[command(subcommand)]
+        command: UploadCommand,
+    },
     /// テンプレートを扱う
     Template {
         #[command(subcommand)]
@@ -95,12 +100,20 @@ enum GetCommand {
     Room(GetRoomArgs),
     /// メッセージ情報を表示する
     Message(GetMessageArgs),
+    /// ルーム内のファイル一覧を表示する
+    Files(GetFilesArgs),
 }
 
 #[derive(Debug, Subcommand)]
 enum DownloadCommand {
     /// チャットのファイルをダウンロードする
     File(DownloadFileArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum UploadCommand {
+    /// チャットにファイルをアップロードする
+    File(UploadFileArgs),
 }
 
 #[derive(Debug, Args)]
@@ -169,6 +182,20 @@ struct GetMessageArgs {
 }
 
 #[derive(Debug, Args)]
+struct GetFilesArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: u64,
+
+    /// アップロードしたアカウント ID でフィルタ
+    #[arg(long, value_name = "ACCOUNT_ID")]
+    account_id: Option<u64>,
+}
+
+#[derive(Debug, Args)]
 struct DownloadFileArgs {
     /// ルーム ID
     #[arg(long, value_name = "ROOM_ID")]
@@ -197,6 +224,21 @@ struct DownloadFileArgs {
     /// 既存ファイルを上書きする
     #[arg(long)]
     force: bool,
+}
+
+#[derive(Debug, Args)]
+struct UploadFileArgs {
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: u64,
+
+    /// アップロードするファイルのパス
+    #[arg(long, value_name = "PATH")]
+    file: PathBuf,
+
+    /// 添付メッセージ
+    #[arg(short = 'm', long, value_name = "MESSAGE")]
+    message: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -342,6 +384,28 @@ struct RoomFileResponse {
     download_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct FilesEntryResponse {
+    file_id: u64,
+    account: FilesEntryAccount,
+    message_id: String,
+    filename: String,
+    filesize: u64,
+    upload_time: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct FilesEntryAccount {
+    account_id: u64,
+    name: String,
+    avatar_image_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct UploadFileResponse {
+    file_id: u64,
+}
+
 #[derive(Debug, Deserialize)]
 struct RoomMessageResponse {
     body: String,
@@ -358,6 +422,7 @@ enum CommandContext {
     Root,
     Get,
     Download,
+    Upload,
     Template,
     Leaf,
 }
@@ -368,7 +433,9 @@ enum UsageContext {
     Get,
     GetRoom,
     GetMessage,
+    GetFiles,
     DownloadFile,
+    UploadFile,
     Template,
     TemplateShow,
     Send,
@@ -418,6 +485,7 @@ fn main() -> Result<()> {
     let result = match cli.command {
         Commands::Get { command } => handle_get_command(command),
         Commands::Download { command } => handle_download_command(command),
+        Commands::Upload { command } => handle_upload_command(command),
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
             handle_template_command(command, &config)
@@ -517,6 +585,7 @@ fn infer_usage_context(args: &[OsString]) -> UsageContext {
             CommandContext::Root => match text {
                 "send" => return UsageContext::Send,
                 "download" => return UsageContext::DownloadFile,
+                "upload" => return UsageContext::UploadFile,
                 "get" => context = CommandContext::Get,
                 "template" => context = CommandContext::Template,
                 _ => return UsageContext::Root,
@@ -524,6 +593,7 @@ fn infer_usage_context(args: &[OsString]) -> UsageContext {
             CommandContext::Get => match text {
                 "room" => return UsageContext::GetRoom,
                 "message" => return UsageContext::GetMessage,
+                "files" => return UsageContext::GetFiles,
                 _ => return UsageContext::Get,
             },
             CommandContext::Template => match text {
@@ -655,6 +725,7 @@ fn help_text(context: UsageContext) -> &'static str {
 Commands:
   get         情報を取得する
   download    ファイルをダウンロードする
+  upload      ファイルをアップロードする
   template    テンプレートを扱う
   send        テンプレートを送信する
   completion  シェル補完スクリプトを出力する
@@ -680,6 +751,7 @@ Commands:
   contacts    コンタクト一覧を表示する
   room        ルーム情報を表示する
   message     メッセージ情報を表示する
+  files       ルーム内のファイル一覧を表示する
   help        このメッセージまたは指定したサブコマンドのヘルプを表示する
 
 Options:
@@ -744,6 +816,30 @@ Options:
       --force              既存ファイルを上書きする
   -h, --help               ヘルプを表示する"#
         }
+        UsageContext::GetFiles => {
+            r#"Usage: chatwork get files [OPTIONS] --room-id <ROOM_ID>
+       chatwork g files [OPTIONS] --room-id <ROOM_ID>
+
+Options:
+      --room-id <ROOM_ID>        ルーム ID
+      --account-id <ACCOUNT_ID>  アップロードしたアカウント ID でフィルタ
+      --format <FORMAT>          出力形式
+      --config <PATH>            設定ファイルのパス
+  -h, --help                     ヘルプを表示する"#
+        }
+        UsageContext::UploadFile => {
+            r#"Usage: chatwork upload file [OPTIONS] --room-id <ROOM_ID> --file <PATH>
+       chatwork upload [OPTIONS] --room-id <ROOM_ID> --file <PATH>
+       chatwork u file [OPTIONS] --room-id <ROOM_ID> --file <PATH>
+       chatwork u [OPTIONS] --room-id <ROOM_ID> --file <PATH>
+
+Options:
+      --config <PATH>      設定ファイルのパス
+      --room-id <ROOM_ID>  ルーム ID
+      --file <PATH>        アップロードするファイルのパス
+  -m, --message <MESSAGE>  添付メッセージ
+  -h, --help               ヘルプを表示する"#
+        }
         UsageContext::Template => {
             r#"Usage: chatwork template [OPTIONS] <COMMAND>
        chatwork t [OPTIONS] <COMMAND>
@@ -801,6 +897,8 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
     let mut parse_options = true;
     let mut pending_download_default_index = None;
     let mut download_item_seen = false;
+    let mut pending_upload_default_index = None;
+    let mut upload_item_seen = false;
     let mut pending_get_chat_url = false;
     let mut get_subcommand_insert_index = None;
 
@@ -889,6 +987,10 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
                 pending_download_default_index = Some(normalized.len() + 1);
                 download_item_seen = false;
             }
+            if matches!(context, CommandContext::Upload) {
+                pending_upload_default_index = Some(normalized.len() + 1);
+                upload_item_seen = false;
+            }
             if matches!(context, CommandContext::Get) {
                 get_subcommand_insert_index = Some(normalized.len() + 1);
             } else if matches!(context, CommandContext::Leaf) {
@@ -899,6 +1001,10 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
             {
                 download_item_seen = true;
             }
+            if matches!(command.as_str(), "file" | "help") && pending_upload_default_index.is_some()
+            {
+                upload_item_seen = true;
+            }
             normalized.push(command.into());
             continue;
         }
@@ -907,11 +1013,20 @@ fn normalize_cli_args(args: Vec<OsString>) -> Result<Vec<OsString>> {
         {
             download_item_seen = true;
         }
+        if pending_upload_default_index.is_some() && !matches!(context, CommandContext::Upload) {
+            upload_item_seen = true;
+        }
         normalized.push(arg);
     }
 
     if let Some(index) = pending_download_default_index {
         if !download_item_seen {
+            normalized.insert(index, OsString::from("file"));
+        }
+    }
+
+    if let Some(index) = pending_upload_default_index {
+        if !upload_item_seen {
             normalized.insert(index, OsString::from("file"));
         }
     }
@@ -930,8 +1045,10 @@ fn long_option_takes_value(name: &str) -> bool {
             | "room-id"
             | "file-id"
             | "message-id"
+            | "account-id"
             | "room"
             | "message"
+            | "file"
             | "var"
     )
 }
@@ -942,7 +1059,15 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
     }
 
     let candidates = match context {
-        CommandContext::Root => &["get", "download", "template", "send", "completion", "help"][..],
+        CommandContext::Root => &[
+            "get",
+            "download",
+            "upload",
+            "template",
+            "send",
+            "completion",
+            "help",
+        ][..],
         CommandContext::Get => &[
             "me",
             "status",
@@ -950,9 +1075,11 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
             "contacts",
             "room",
             "message",
+            "files",
             "help",
         ][..],
         CommandContext::Download => &["file", "help"][..],
+        CommandContext::Upload => &["file", "help"][..],
         CommandContext::Template => &["list", "show", "help"][..],
         CommandContext::Leaf => &[][..],
     };
@@ -1003,6 +1130,7 @@ fn next_command_context(current: CommandContext, command: &str) -> CommandContex
     match (current, command) {
         (CommandContext::Root, "get") => CommandContext::Get,
         (CommandContext::Root, "download") => CommandContext::Download,
+        (CommandContext::Root, "upload") => CommandContext::Upload,
         (CommandContext::Root, "template") => CommandContext::Template,
         _ => CommandContext::Leaf,
     }
@@ -1094,6 +1222,11 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
             let message = get_room_message_json(DEFAULT_BASE_URL, &token, room_id, message_id)?;
             print_value(&message, args.output.format)?;
         }
+        GetCommand::Files(args) => {
+            let token = load_api_token()?;
+            let files = get_room_files(DEFAULT_BASE_URL, &token, args.room_id, args.account_id)?;
+            print_files(&files, args.output.format)?;
+        }
     }
 
     Ok(())
@@ -1133,6 +1266,61 @@ fn handle_download_command(command: DownloadCommand) -> Result<()> {
                     )
                 );
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_upload_command(command: UploadCommand) -> Result<()> {
+    match command {
+        UploadCommand::File(args) => {
+            let token = load_api_token()?;
+            let path = &args.file;
+
+            if !path.exists() {
+                bail!(
+                    "{}",
+                    trf(
+                        "File not found: {path}",
+                        &[("path", &path.display().to_string())],
+                    )
+                );
+            }
+
+            let filesize = fs::metadata(path)
+                .with_context(|| {
+                    trf(
+                        "Failed to read file metadata: {path}",
+                        &[("path", &path.display().to_string())],
+                    )
+                })?
+                .len();
+
+            if filesize > 5 * 1024 * 1024 {
+                bail!(
+                    "{}",
+                    trf(
+                        "File size exceeds the 5 MB limit: {path}",
+                        &[("path", &path.display().to_string())],
+                    )
+                );
+            }
+
+            let result = upload_file(
+                DEFAULT_BASE_URL,
+                &token,
+                args.room_id,
+                path,
+                args.message.as_deref(),
+            )?;
+            println!(
+                "{}",
+                trf(
+                    "Uploaded the file. file_id={file_id}",
+                    &[("file_id", &result.file_id.to_string())],
+                )
+            );
         }
     }
 
@@ -1422,6 +1610,95 @@ fn get_status(base_url: &str, token: &str) -> Result<StatusResponse> {
 
 fn get_contacts(base_url: &str, token: &str) -> Result<Vec<ContactResponse>> {
     get_api_json(base_url, token, "/contacts")
+}
+
+fn get_room_files(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    account_id: Option<u64>,
+) -> Result<Vec<FilesEntryResponse>> {
+    let endpoint = format!("{}/rooms/{room_id}/files", base_url.trim_end_matches('/'));
+    let client = Client::new();
+    let mut request = client.get(endpoint).header("X-ChatWorkToken", token);
+
+    if let Some(aid) = account_id {
+        request = request.query(&[("account_id", aid)]);
+    }
+
+    let response = request
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+
+    let status = response.status();
+
+    if status == StatusCode::NO_CONTENT {
+        return Ok(vec![]);
+    }
+
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+
+    serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
+}
+
+fn upload_file(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    file_path: &Path,
+    message: Option<&str>,
+) -> Result<UploadFileResponse> {
+    let endpoint = format!("{}/rooms/{room_id}/files", base_url.trim_end_matches('/'));
+
+    let mut form = reqwest::blocking::multipart::Form::new()
+        .file("file", file_path)
+        .with_context(|| {
+            trf(
+                "Failed to read file: {path}",
+                &[("path", &file_path.display().to_string())],
+            )
+        })?;
+
+    if let Some(msg) = message {
+        form = form.text("message", msg.to_string());
+    }
+
+    let client = Client::new();
+    let response = client
+        .post(endpoint)
+        .header("X-ChatWorkToken", token)
+        .multipart(form)
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+
+    serde_json::from_str(&response_body).context(tr("Failed to parse Chatwork API response JSON."))
 }
 
 fn filter_contacts(
@@ -1958,6 +2235,28 @@ fn print_contacts(contacts: &[ContactResponse], format: GetFormat) -> Result<()>
                     contact.organization_name.as_deref().unwrap_or(""),
                     contact.department.as_deref().unwrap_or(""),
                     contact.room_id.map(|id| id.to_string()).unwrap_or_default(),
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn print_files(files: &[FilesEntryResponse], format: GetFormat) -> Result<()> {
+    match format {
+        GetFormat::Json | GetFormat::JsonMinify => print_json(files, format)?,
+        GetFormat::Plain => {
+            println!("file_id\tfilename\tfilesize\tupload_time\taccount_id\taccount_name");
+            for file in files {
+                println!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    file.file_id,
+                    file.filename,
+                    file.filesize,
+                    file.upload_time,
+                    file.account.account_id,
+                    file.account.name,
                 );
             }
         }
@@ -3436,5 +3735,157 @@ body_file = "invalid.txt"
             .unwrap()
             .as_nanos();
         env::temp_dir().join(format!("chatwork-cli-{name}-{unique}"))
+    }
+
+    #[test]
+    fn normalize_cli_args_inserts_default_upload_file_subcommand() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "upload".into(),
+            "--room-id".into(),
+            "123".into(),
+            "--file".into(),
+            "report.pdf".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("chatwork"),
+                OsString::from("upload"),
+                OsString::from("file"),
+                OsString::from("--room-id"),
+                OsString::from("123"),
+                OsString::from("--file"),
+                OsString::from("report.pdf"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_cli_args_expands_upload_prefix() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "u".into(),
+            "--room-id".into(),
+            "123".into(),
+            "--file".into(),
+            "report.pdf".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(args[1], OsString::from("upload"));
+        assert_eq!(args[2], OsString::from("file"));
+    }
+
+    #[test]
+    fn normalize_cli_args_expands_get_files_prefix() {
+        let args = normalize_cli_args(vec![
+            "chatwork".into(),
+            "g".into(),
+            "fi".into(),
+            "--room-id".into(),
+            "123".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(args[1], OsString::from("get"));
+        assert_eq!(args[2], OsString::from("files"));
+    }
+
+    #[test]
+    fn upload_file_command_parses_room_id_as_u64() {
+        let _lock = env_lock();
+        env::set_var("CHATWORK_API_TOKEN", "dummy");
+
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "upload",
+            "file",
+            "--room-id",
+            "12345678",
+            "--file",
+            "/tmp/test.txt",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Upload { command } => match command {
+                UploadCommand::File(args) => {
+                    assert_eq!(args.room_id, 12345678);
+                }
+            },
+            _ => panic!("expected Upload command"),
+        }
+
+        env::remove_var("CHATWORK_API_TOKEN");
+    }
+
+    #[test]
+    fn upload_file_command_rejects_non_numeric_room_id() {
+        let result = Cli::try_parse_from([
+            "chatwork",
+            "upload",
+            "file",
+            "--room-id",
+            "abc",
+            "--file",
+            "/tmp/test.txt",
+        ]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_files_command_parses_without_config() {
+        let _lock = env_lock();
+        env::set_var("CHATWORK_API_TOKEN", "dummy");
+
+        let cli =
+            Cli::try_parse_from(["chatwork", "get", "files", "--room-id", "12345678"]).unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Files(args) => {
+                    assert_eq!(args.room_id, 12345678);
+                    assert_eq!(args.account_id, None);
+                }
+                _ => panic!("expected Files subcommand"),
+            },
+            _ => panic!("expected Get command"),
+        }
+
+        env::remove_var("CHATWORK_API_TOKEN");
+    }
+
+    #[test]
+    fn get_files_command_parses_account_id_filter() {
+        let _lock = env_lock();
+        env::set_var("CHATWORK_API_TOKEN", "dummy");
+
+        let cli = Cli::try_parse_from([
+            "chatwork",
+            "get",
+            "files",
+            "--room-id",
+            "12345678",
+            "--account-id",
+            "9876543",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Get { command } => match command {
+                GetCommand::Files(args) => {
+                    assert_eq!(args.room_id, 12345678);
+                    assert_eq!(args.account_id, Some(9876543));
+                }
+                _ => panic!("expected Files subcommand"),
+            },
+            _ => panic!("expected Get command"),
+        }
+
+        env::remove_var("CHATWORK_API_TOKEN");
     }
 }

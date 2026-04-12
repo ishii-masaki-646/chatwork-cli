@@ -24,12 +24,12 @@ const BASH_SCRIPT: &str = r#"_chatwork_resolve_prefix() {
 
     case "${context}" in
         root)
-            candidates=(get download template send completion help)
+            candidates=(get download upload template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts room message help)
+            candidates=(me status my-status contacts room message files help)
             ;;
-        download)
+        download|upload)
             candidates=(file help)
             ;;
         template)
@@ -69,6 +69,7 @@ _chatwork() {
 
     local config=""
     local download_subcmd=""
+    local upload_subcmd=""
     local mode=""
     local get_subcmd=""
     local template_subcmd=""
@@ -99,7 +100,7 @@ _chatwork() {
                     ((i++))
                 fi
                 ;;
-            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id|--account-id|--file)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -107,6 +108,11 @@ _chatwork() {
             download)
                 mode="download"
                 download_subcmd=""
+                positional_seen=0
+                ;;
+            upload)
+                mode="upload"
+                upload_subcmd=""
                 positional_seen=0
                 ;;
             get)
@@ -148,9 +154,16 @@ _chatwork() {
                     get_subcmd="message"
                 fi
                 ;;
+            files)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="files"
+                fi
+                ;;
             file)
                 if [[ "${mode}" == "download" ]]; then
                     download_subcmd="file"
+                elif [[ "${mode}" == "upload" ]]; then
+                    upload_subcmd="file"
                 fi
                 ;;
             show)
@@ -189,7 +202,7 @@ _chatwork() {
         opt="${cur%%=*}"
         value="${cur#*=}"
         case "${opt}" in
-            --config|--output|--out-dir)
+            --config|--output|--out-dir|--file)
                 local -a values
                 values=( $(compgen -f -- "${value}") )
                 COMPREPLY=( "${values[@]/#/${opt}=}" )
@@ -201,7 +214,7 @@ _chatwork() {
                 COMPREPLY=( "${values[@]/#/${opt}=}" )
                 return 0
                 ;;
-            --chat-url|--room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
+            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
                 return 0
                 ;;
         esac
@@ -216,14 +229,14 @@ _chatwork() {
             COMPREPLY=( $(compgen -W "json json-minify plain" -- "${cur}") )
             return 0
             ;;
-        --output|--out-dir)
+        --output|--out-dir|--file)
             COMPREPLY=( $(compgen -f -- "${cur}") )
             return 0
             ;;
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--room|--message|--var)
+        --room-id|--file-id|--message-id|--account-id|--room|--message|--var)
             return 0
             ;;
     esac
@@ -265,8 +278,13 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "files" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --account-id --format --config --help" -- "${cur}") )
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "me status my-status contacts room message --format --chat-url --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "me status my-status contacts room message files --format --chat-url --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -277,6 +295,16 @@ _chatwork() {
 
     if [[ "${mode}" == "download" && -z "${download_subcmd}" ]]; then
         COMPREPLY=( $(compgen -W "--chat-url --room-id --file-id --output --out-dir --force --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "upload" && "${upload_subcmd}" == "file" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --file --message --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "upload" && -z "${upload_subcmd}" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --file --message --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -312,7 +340,7 @@ _chatwork() {
         return 0
     fi
 
-    COMPREPLY=( $(compgen -W "get download template send completion --config --help --version -h -V" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "get download upload template send completion --config --help --version -h -V" -- "${cur}") )
     return 0
 }
 
@@ -334,12 +362,12 @@ _chatwork_resolve_prefix() {
 
     case "${context}" in
         root)
-            candidates=(get download template send completion help)
+            candidates=(get download upload template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts room message help)
+            candidates=(me status my-status contacts room message files help)
             ;;
-        download)
+        download|upload)
             candidates=(file help)
             ;;
         template)
@@ -418,6 +446,7 @@ _chatwork() {
 
     local config=""
     local download_subcmd=""
+    local upload_subcmd=""
     local mode=""
     local get_subcmd=""
     local template_subcmd=""
@@ -448,7 +477,7 @@ _chatwork() {
                     ((i++))
                 fi
                 ;;
-            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id)
+            --chat-url|--output|--out-dir|--room-id|--file-id|--message-id|--account-id|--file)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -456,6 +485,11 @@ _chatwork() {
             download)
                 mode="download"
                 download_subcmd=""
+                positional_seen=0
+                ;;
+            upload)
+                mode="upload"
+                upload_subcmd=""
                 positional_seen=0
                 ;;
             get)
@@ -497,9 +531,16 @@ _chatwork() {
                     get_subcmd="message"
                 fi
                 ;;
+            files)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="files"
+                fi
+                ;;
             file)
                 if [[ "${mode}" == "download" ]]; then
                     download_subcmd="file"
+                elif [[ "${mode}" == "upload" ]]; then
+                    upload_subcmd="file"
                 fi
                 ;;
             show)
@@ -516,7 +557,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room-id|--room|--message|--var)
+            --room-id|--room|--message|--var|--aids|--name-query)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -537,7 +578,7 @@ _chatwork() {
         local opt
         opt="${cur%%=*}"
         case "${opt}" in
-            --config|--output|--out-dir)
+            --config|--output|--out-dir|--file)
                 compset -P "${opt}="
                 _files
                 return 0
@@ -553,7 +594,7 @@ _chatwork() {
                 _chatwork_add_described "${formats[@]}"
                 return 0
                 ;;
-            --chat-url|--room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
+            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
                 return 0
                 ;;
         esac
@@ -574,14 +615,14 @@ _chatwork() {
             _chatwork_add_described "${formats[@]}"
             return 0
             ;;
-        --output|--out-dir)
+        --output|--out-dir|--file)
             _files
             return 0
             ;;
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--room|--message|--var|--aids|--name-query)
+        --room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
             return 0
             ;;
     esac
@@ -637,6 +678,19 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "files" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--account-id\tアップロードしたアカウント ID でフィルタする'
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
         local -a opts
         opts=(
@@ -646,6 +700,7 @@ _chatwork() {
             $'contacts\tコンタクト一覧を表示する'
             $'room\tルーム情報を表示する'
             $'message\tメッセージ情報を表示する'
+            $'files\tルーム内のファイル一覧を表示する'
             $'--format\t出力形式を指定する'
             $'--chat-url\tChatwork URL を指定する'
             $'--config\t設定ファイルのパスを指定する'
@@ -680,6 +735,32 @@ _chatwork() {
             $'--output\t保存先ファイルパスまたは既存ディレクトリを指定する'
             $'--out-dir\t保存先ディレクトリを指定する'
             $'--force\t既存ファイルを上書きする'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "upload" && "${upload_subcmd}" == "file" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--file\tアップロードするファイルのパスを指定する'
+            $'--message\t添付メッセージを指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "upload" && -z "${upload_subcmd}" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--file\tアップロードするファイルのパスを指定する'
+            $'--message\t添付メッセージを指定する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )
@@ -777,6 +858,7 @@ _chatwork() {
     opts=(
         $'get\t情報を取得する'
         $'download\tファイルをダウンロードする'
+        $'upload\tファイルをアップロードする'
         $'template\tテンプレートを扱う'
         $'send\tテンプレートを送信する'
         $'completion\tシェル補完スクリプトを出力する'
@@ -793,3 +875,111 @@ _chatwork() {
 compdef _chatwork chatwork
 compdef -p _chatwork '*/chatwork'
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bash_script_contains_all_root_subcommands() {
+        let s = script(ShellScript::Bash);
+        for cmd in [
+            "get",
+            "download",
+            "upload",
+            "template",
+            "send",
+            "completion",
+        ] {
+            assert!(
+                s.contains(cmd),
+                "bash script missing root subcommand: {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn zsh_script_contains_all_root_subcommands() {
+        let s = script(ShellScript::Zsh);
+        for cmd in [
+            "get",
+            "download",
+            "upload",
+            "template",
+            "send",
+            "completion",
+        ] {
+            assert!(s.contains(cmd), "zsh script missing root subcommand: {cmd}");
+        }
+    }
+
+    #[test]
+    fn bash_script_contains_get_files_candidates() {
+        let s = script(ShellScript::Bash);
+        assert!(
+            s.contains("files"),
+            "bash script missing 'files' in get candidates"
+        );
+        assert!(
+            s.contains("--account-id"),
+            "bash script missing --account-id option"
+        );
+    }
+
+    #[test]
+    fn zsh_script_contains_get_files_candidates() {
+        let s = script(ShellScript::Zsh);
+        assert!(
+            s.contains("files"),
+            "zsh script missing 'files' in get candidates"
+        );
+        assert!(
+            s.contains("--account-id"),
+            "zsh script missing --account-id option"
+        );
+    }
+
+    #[test]
+    fn bash_script_contains_upload_options() {
+        let s = script(ShellScript::Bash);
+        assert!(
+            s.contains(r#"mode="upload""#),
+            "bash script missing upload mode"
+        );
+        assert!(
+            s.contains("upload_subcmd"),
+            "bash script missing upload_subcmd tracking"
+        );
+    }
+
+    #[test]
+    fn zsh_script_contains_upload_options() {
+        let s = script(ShellScript::Zsh);
+        assert!(
+            s.contains(r#"mode="upload""#),
+            "zsh script missing upload mode"
+        );
+        assert!(
+            s.contains("upload_subcmd"),
+            "zsh script missing upload_subcmd tracking"
+        );
+    }
+
+    #[test]
+    fn bash_script_resolve_prefix_includes_upload_context() {
+        let s = script(ShellScript::Bash);
+        assert!(
+            s.contains("download|upload)"),
+            "bash resolve_prefix missing upload context"
+        );
+    }
+
+    #[test]
+    fn zsh_script_resolve_prefix_includes_upload_context() {
+        let s = script(ShellScript::Zsh);
+        assert!(
+            s.contains("download|upload)"),
+            "zsh resolve_prefix missing upload context"
+        );
+    }
+}
