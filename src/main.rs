@@ -62,6 +62,16 @@ enum Commands {
         #[command(subcommand)]
         command: UploadCommand,
     },
+    /// 既存メッセージを編集する
+    Update {
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
+    /// 既存メッセージを削除する
+    Delete {
+        #[command(subcommand)]
+        command: DeleteCommand,
+    },
     /// テンプレートを扱う
     Template {
         #[command(subcommand)]
@@ -118,6 +128,18 @@ enum DownloadCommand {
 enum UploadCommand {
     /// チャットにファイルをアップロードする
     File(UploadFileArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum UpdateCommand {
+    /// 既存メッセージの本文を編集する
+    Message(UpdateMessageArgs),
+}
+
+#[derive(Debug, Subcommand)]
+enum DeleteCommand {
+    /// 既存メッセージを削除する
+    Message(DeleteMessageArgs),
 }
 
 #[derive(Debug, Args)]
@@ -325,6 +347,64 @@ struct UploadFileArgs {
 }
 
 #[derive(Debug, Args)]
+struct UpdateMessageArgs {
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// メッセージ ID
+    #[arg(long, value_name = "MESSAGE_ID")]
+    message_id: Option<u64>,
+
+    /// Chatwork メッセージ URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork メッセージ URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
+
+    /// 新しい本文。未指定なら標準入力から読み取る
+    #[arg(short = 'm', long, value_name = "MESSAGE")]
+    message: Option<String>,
+
+    /// 新しい本文をファイルから読み込む
+    #[arg(long = "message-file", value_name = "PATH")]
+    message_file: Option<PathBuf>,
+
+    /// 実際には送らず PUT する内容を表示する
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+struct DeleteMessageArgs {
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// メッセージ ID
+    #[arg(long, value_name = "MESSAGE_ID")]
+    message_id: Option<u64>,
+
+    /// Chatwork メッセージ URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork メッセージ URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
+
+    /// 確認プロンプトをスキップする
+    #[arg(short = 'y', long)]
+    yes: bool,
+
+    /// 実際には送らず DELETE する対象を表示する
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[derive(Debug, Args)]
 struct ShowArgs {
     /// テンプレート名
     name: String,
@@ -506,6 +586,8 @@ enum CommandContext {
     Get,
     Download,
     Upload,
+    Update,
+    Delete,
     Template,
     Leaf,
 }
@@ -569,6 +651,8 @@ fn main() -> Result<()> {
         Commands::Get { command } => handle_get_command(command),
         Commands::Download { command } => handle_download_command(command),
         Commands::Upload { command } => handle_upload_command(command),
+        Commands::Update { command } => handle_update_command(command),
+        Commands::Delete { command } => handle_delete_command(command),
         Commands::Template { command } => {
             let config = load_config_for_cli(cli.config.as_deref())?;
             handle_template_command(command, &config)
@@ -1146,6 +1230,8 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
             "get",
             "download",
             "upload",
+            "update",
+            "delete",
             "template",
             "send",
             "completion",
@@ -1165,6 +1251,8 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
         ][..],
         CommandContext::Download => &["file", "help"][..],
         CommandContext::Upload => &["file", "help"][..],
+        CommandContext::Update => &["message", "help"][..],
+        CommandContext::Delete => &["message", "help"][..],
         CommandContext::Template => &["list", "show", "help"][..],
         CommandContext::Leaf => &[][..],
     };
@@ -1216,6 +1304,8 @@ fn next_command_context(current: CommandContext, command: &str) -> CommandContex
         (CommandContext::Root, "get") => CommandContext::Get,
         (CommandContext::Root, "download") => CommandContext::Download,
         (CommandContext::Root, "upload") => CommandContext::Upload,
+        (CommandContext::Root, "update") => CommandContext::Update,
+        (CommandContext::Root, "delete") => CommandContext::Delete,
         (CommandContext::Root, "template") => CommandContext::Template,
         _ => CommandContext::Leaf,
     }
@@ -1422,6 +1512,71 @@ fn handle_upload_command(command: UploadCommand) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn handle_update_command(command: UpdateCommand) -> Result<()> {
+    match command {
+        UpdateCommand::Message(args) => {
+            let token = load_api_token()?;
+            let (room_id, message_id) = resolve_update_message_ids(&args)?;
+            let body = resolve_update_message_body(&args)?;
+            if body.is_empty() {
+                bail!(tr("Empty body is not allowed."));
+            }
+
+            if args.dry_run {
+                println!("PUT /rooms/{room_id}/messages/{message_id}");
+                println!("body:");
+                println!("{body}");
+                return Ok(());
+            }
+
+            update_room_message(DEFAULT_BASE_URL, &token, room_id, message_id, &body)?;
+            println!(
+                "{}",
+                trf(
+                    "Updated the message. room_id={room_id} message_id={message_id}",
+                    &[
+                        ("room_id", &room_id.to_string()),
+                        ("message_id", &message_id.to_string()),
+                    ],
+                )
+            );
+        }
+    }
+    Ok(())
+}
+
+fn handle_delete_command(command: DeleteCommand) -> Result<()> {
+    match command {
+        DeleteCommand::Message(args) => {
+            let token = load_api_token()?;
+            let (room_id, message_id) = resolve_delete_message_ids(&args)?;
+
+            if args.dry_run {
+                println!("DELETE /rooms/{room_id}/messages/{message_id}");
+                return Ok(());
+            }
+
+            if !args.yes && !confirm_delete(room_id, message_id)? {
+                println!("{}", tr("Aborted."));
+                return Ok(());
+            }
+
+            delete_room_message(DEFAULT_BASE_URL, &token, room_id, message_id)?;
+            println!(
+                "{}",
+                trf(
+                    "Deleted the message. room_id={room_id} message_id={message_id}",
+                    &[
+                        ("room_id", &room_id.to_string()),
+                        ("message_id", &message_id.to_string()),
+                    ],
+                )
+            );
+        }
+    }
     Ok(())
 }
 
@@ -2876,6 +3031,156 @@ fn send_message(
     Ok(message_id)
 }
 
+fn update_room_message(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+    message_id: u64,
+    body: &str,
+) -> Result<()> {
+    let endpoint = format!(
+        "{}/rooms/{room_id}/messages/{message_id}",
+        base_url.trim_end_matches('/')
+    );
+    let response = Client::new()
+        .put(endpoint)
+        .header("X-ChatWorkToken", token)
+        .form(&[("body", body)])
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+    Ok(())
+}
+
+fn delete_room_message(base_url: &str, token: &str, room_id: u64, message_id: u64) -> Result<()> {
+    let endpoint = format!(
+        "{}/rooms/{room_id}/messages/{message_id}",
+        base_url.trim_end_matches('/')
+    );
+    let response = Client::new()
+        .delete(endpoint)
+        .header("X-ChatWorkToken", token)
+        .send()
+        .context(tr("Failed to send request to Chatwork API."))?;
+    let status = response.status();
+    let response_body = response
+        .text()
+        .context(tr("Failed to read response body from Chatwork API."))?;
+    if status != StatusCode::OK {
+        bail!(
+            "{}",
+            trf(
+                "Chatwork API returned an error: status={status} body={body}",
+                &[("status", status.as_str()), ("body", &response_body)],
+            )
+        );
+    }
+    Ok(())
+}
+
+fn resolve_update_message_ids(args: &UpdateMessageArgs) -> Result<(u64, u64)> {
+    resolve_room_and_message_id(
+        args.room_id,
+        args.message_id,
+        args.chat_url.as_deref().or(args.chat_url_arg.as_deref()),
+    )
+}
+
+fn resolve_delete_message_ids(args: &DeleteMessageArgs) -> Result<(u64, u64)> {
+    resolve_room_and_message_id(
+        args.room_id,
+        args.message_id,
+        args.chat_url.as_deref().or(args.chat_url_arg.as_deref()),
+    )
+}
+
+fn resolve_room_and_message_id(
+    room_id: Option<u64>,
+    message_id: Option<u64>,
+    chat_url: Option<&str>,
+) -> Result<(u64, u64)> {
+    match (room_id, message_id, chat_url) {
+        (Some(r), Some(m), _) => Ok((r, m)),
+        (_, _, Some(url)) => {
+            let (r, m) = parse_chatwork_url_parts(url)
+                .ok_or_else(|| anyhow::anyhow!(tr("Failed to parse chat URL.")))?;
+            let m =
+                m.ok_or_else(|| anyhow::anyhow!(tr("Failed to parse message_id from chat URL.")))?;
+            Ok((r, m))
+        }
+        _ => bail!(tr(
+            "Specify --room-id and --message-id, or pass a Chatwork message URL."
+        )),
+    }
+}
+
+fn resolve_update_message_body(args: &UpdateMessageArgs) -> Result<String> {
+    if args.message.is_some() && args.message_file.is_some() {
+        bail!(tr("Specify only one of --message and --message-file."));
+    }
+    if let Some(text) = args.message.as_ref() {
+        return Ok(text.clone());
+    }
+    if let Some(path) = args.message_file.as_ref() {
+        return fs::read_to_string(path).with_context(|| {
+            trf(
+                "Failed to read file: {path}",
+                &[("path", &path.display().to_string())],
+            )
+        });
+    }
+    // どちらも未指定なら stdin を読む (TTY なら案内を出す)
+    use std::io::IsTerminal;
+    use std::io::Read;
+    if io::stdin().is_terminal() {
+        bail!(tr(
+            "No body specified. Use --message, --message-file, or pipe content via stdin."
+        ));
+    }
+    let mut buf = String::new();
+    io::stdin()
+        .read_to_string(&mut buf)
+        .context(tr("Failed to read body from stdin."))?;
+    Ok(buf.trim_end_matches('\n').to_string())
+}
+
+fn confirm_delete(room_id: u64, message_id: u64) -> Result<bool> {
+    use std::io::IsTerminal;
+    if !io::stdin().is_terminal() {
+        bail!(tr(
+            "Refusing to delete without --yes when stdin is not a TTY."
+        ));
+    }
+    let mut editor = DefaultEditor::new().map_err(|err| match err {
+        ReadlineError::Io(io_err) => anyhow::anyhow!(io_err),
+        other => anyhow::anyhow!(other.to_string()),
+    })?;
+    let prompt = trf(
+        "Delete message? room_id={room_id} message_id={message_id} [y/N]: ",
+        &[
+            ("room_id", &room_id.to_string()),
+            ("message_id", &message_id.to_string()),
+        ],
+    );
+    match editor.readline(&prompt) {
+        Ok(line) => Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes")),
+        Err(ReadlineError::Eof | ReadlineError::Interrupted) => Ok(false),
+        Err(err) => Err(anyhow::anyhow!(err.to_string())),
+    }
+}
+
 fn extract_message_id(response_body: &str) -> Result<String> {
     let prefix = "\"message_id\":\"";
     let start = response_body
@@ -3207,7 +3512,7 @@ mod tests {
     fn normalize_cli_args_expands_unique_subcommand_prefixes() {
         let args = normalize_cli_args(vec![
             "chatwork".into(),
-            "d".into(),
+            "do".into(),
             "f".into(),
             "--chat-url".into(),
             "https://www.chatwork.com/#!rid1-2".into(),
@@ -4040,7 +4345,7 @@ body_file = "invalid.txt"
     fn normalize_cli_args_expands_upload_prefix() {
         let args = normalize_cli_args(vec![
             "chatwork".into(),
-            "u".into(),
+            "upl".into(),
             "--room-id".into(),
             "123".into(),
             "--file".into(),

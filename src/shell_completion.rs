@@ -24,13 +24,16 @@ const BASH_SCRIPT: &str = r#"_chatwork_resolve_prefix() {
 
     case "${context}" in
         root)
-            candidates=(get download upload template send completion help)
+            candidates=(get download upload update delete template send completion help)
             ;;
         get)
             candidates=(me status my-status contacts rooms room messages message files help)
             ;;
         download|upload)
             candidates=(file help)
+            ;;
+        update|delete)
+            candidates=(message help)
             ;;
         template)
             candidates=(list show help)
@@ -382,13 +385,16 @@ _chatwork_resolve_prefix() {
 
     case "${context}" in
         root)
-            candidates=(get download upload template send completion help)
+            candidates=(get download upload update delete template send completion help)
             ;;
         get)
             candidates=(me status my-status contacts rooms room messages message files help)
             ;;
         download|upload)
             candidates=(file help)
+            ;;
+        update|delete)
+            candidates=(message help)
             ;;
         template)
             candidates=(list show help)
