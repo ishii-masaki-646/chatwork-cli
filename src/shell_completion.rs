@@ -27,7 +27,7 @@ const BASH_SCRIPT: &str = r#"_chatwork_resolve_prefix() {
             candidates=(get download upload template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts room message files help)
+            candidates=(me status my-status contacts rooms room messages message files help)
             ;;
         download|upload)
             candidates=(file help)
@@ -144,9 +144,19 @@ _chatwork() {
                     get_subcmd="contacts"
                 fi
                 ;;
+            rooms)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="rooms"
+                fi
+                ;;
             room)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="room"
+                fi
+                ;;
+            messages)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="messages"
                 fi
                 ;;
             message)
@@ -268,8 +278,18 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "rooms" ]]; then
+        COMPREPLY=( $(compgen -W "--name-query --type --format --config --help" -- "${cur}") )
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && "${get_subcmd}" == "room" ]]; then
         COMPREPLY=( $(compgen -W "--room-id --chat-url --format --config --help" -- "${cur}") )
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "messages" ]]; then
+        COMPREPLY=( $(compgen -W "--room-id --chat-url --account-id --since --until --today --query --limit --format --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -284,7 +304,7 @@ _chatwork() {
     fi
 
     if [[ "${mode}" == "get" && -z "${get_subcmd}" ]]; then
-        COMPREPLY=( $(compgen -W "me status my-status contacts room message files --format --chat-url --config --help" -- "${cur}") )
+        COMPREPLY=( $(compgen -W "me status my-status contacts rooms room messages message files --format --chat-url --config --help" -- "${cur}") )
         return 0
     fi
 
@@ -365,7 +385,7 @@ _chatwork_resolve_prefix() {
             candidates=(get download upload template send completion help)
             ;;
         get)
-            candidates=(me status my-status contacts room message files help)
+            candidates=(me status my-status contacts rooms room messages message files help)
             ;;
         download|upload)
             candidates=(file help)
@@ -521,9 +541,19 @@ _chatwork() {
                     get_subcmd="contacts"
                 fi
                 ;;
+            rooms)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="rooms"
+                fi
+                ;;
             room)
                 if [[ "${mode}" == "get" ]]; then
                     get_subcmd="room"
+                fi
+                ;;
+            messages)
+                if [[ "${mode}" == "get" ]]; then
+                    get_subcmd="messages"
                 fi
                 ;;
             message)
@@ -651,11 +681,43 @@ _chatwork() {
         return 0
     fi
 
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "rooms" ]]; then
+        local -a opts
+        opts=(
+            $'--name-query\tルーム名で部分一致検索する'
+            $'--type\tルーム種別 (group/my/direct) でフィルタする'
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
     if [[ "${mode}" == "get" && "${get_subcmd}" == "room" ]]; then
         local -a opts
         opts=(
             $'--room-id\t対象ルーム ID を指定する'
             $'--chat-url\tChatwork ルーム URL を指定する'
+            $'--format\t出力形式を指定する'
+            $'--config\t設定ファイルのパスを指定する'
+            $'--help\tヘルプを表示する'
+        )
+        _chatwork_add_described "${opts[@]}"
+        return 0
+    fi
+
+    if [[ "${mode}" == "get" && "${get_subcmd}" == "messages" ]]; then
+        local -a opts
+        opts=(
+            $'--room-id\t対象ルーム ID を指定する'
+            $'--chat-url\tChatwork ルーム URL を指定する'
+            $'--account-id\t投稿者の account_id でフィルタする'
+            $'--since\t開始日時 (RFC3339 / YYYY-MM-DD / unix epoch)'
+            $'--until\t終了日時 (RFC3339 / YYYY-MM-DD / unix epoch)'
+            $'--today\t当日 0:00〜23:59:59 (JST) のメッセージに絞る'
+            $'--query\t本文の部分一致でフィルタする'
+            $'--limit\t最新 N 件のみ取得する'
             $'--format\t出力形式を指定する'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
@@ -698,7 +760,9 @@ _chatwork() {
             $'status\t未読やタスクの件数を表示する'
             $'my-status\tstatus と同じ内容を表示する'
             $'contacts\tコンタクト一覧を表示する'
+            $'rooms\t自分が属するルーム一覧を表示する'
             $'room\tルーム情報を表示する'
+            $'messages\tルーム内のメッセージ一覧を表示する'
             $'message\tメッセージ情報を表示する'
             $'files\tルーム内のファイル一覧を表示する'
             $'--format\t出力形式を指定する'

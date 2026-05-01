@@ -96,8 +96,12 @@ enum GetCommand {
     Status(GetOutputArgs),
     /// コンタクト一覧を表示する
     Contacts(GetContactsArgs),
+    /// 自分が属するルーム一覧を表示する
+    Rooms(GetRoomsArgs),
     /// ルーム情報を表示する
     Room(GetRoomArgs),
+    /// ルーム内のメッセージ一覧を表示する
+    Messages(GetMessagesArgs),
     /// メッセージ情報を表示する
     Message(GetMessageArgs),
     /// ルーム内のファイル一覧を表示する
@@ -157,6 +161,85 @@ struct GetRoomArgs {
     /// Chatwork ルーム URL
     #[arg(value_name = "CHAT_URL")]
     chat_url_arg: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct GetRoomsArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// ルーム名で部分一致検索する
+    #[arg(long = "name-query", value_name = "TEXT")]
+    name_query: Option<String>,
+
+    /// ルーム種別でフィルタする
+    #[arg(long = "type", value_enum, value_name = "TYPE")]
+    room_type: Option<RoomType>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum RoomType {
+    /// グループチャット
+    #[value(name = "group")]
+    Group,
+    /// マイチャット
+    #[value(name = "my")]
+    My,
+    /// ダイレクトチャット
+    #[value(name = "direct")]
+    Direct,
+}
+
+impl RoomType {
+    fn as_str(self) -> &'static str {
+        match self {
+            RoomType::Group => "group",
+            RoomType::My => "my",
+            RoomType::Direct => "direct",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+struct GetMessagesArgs {
+    #[command(flatten)]
+    output: GetOutputArgs,
+
+    /// ルーム ID
+    #[arg(long, value_name = "ROOM_ID")]
+    room_id: Option<u64>,
+
+    /// Chatwork ルーム URL
+    #[arg(long, value_name = "URL")]
+    chat_url: Option<String>,
+
+    /// Chatwork ルーム URL
+    #[arg(value_name = "CHAT_URL")]
+    chat_url_arg: Option<String>,
+
+    /// 投稿者の account_id でフィルタ
+    #[arg(long, value_name = "ACCOUNT_ID")]
+    account_id: Option<u64>,
+
+    /// 開始日時 (RFC3339 / YYYY-MM-DD / unix epoch seconds)
+    #[arg(long, value_name = "DATETIME")]
+    since: Option<String>,
+
+    /// 終了日時 (RFC3339 / YYYY-MM-DD / unix epoch seconds)
+    #[arg(long, value_name = "DATETIME")]
+    until: Option<String>,
+
+    /// 当日 00:00 〜 23:59:59 (JST) のメッセージに絞る
+    #[arg(long, conflicts_with_all = ["since", "until"])]
+    today: bool,
+
+    /// メッセージ本文の部分一致でフィルタ
+    #[arg(long, value_name = "TEXT")]
+    query: Option<String>,
+
+    /// 最新 N 件のみ取得
+    #[arg(long, value_name = "N")]
+    limit: Option<usize>,
 }
 
 #[derive(Debug, Args)]
@@ -1073,7 +1156,9 @@ fn resolve_subcommand_prefix(context: CommandContext, token: &str) -> Result<Opt
             "status",
             "my-status",
             "contacts",
+            "rooms",
             "room",
+            "messages",
             "message",
             "files",
             "help",
@@ -1210,11 +1295,24 @@ fn handle_get_command(command: GetCommand) -> Result<()> {
             let contacts = filter_contacts(contacts, &args.aids, args.name_query.as_deref());
             print_contacts(&contacts, args.output.format)?;
         }
+        GetCommand::Rooms(args) => {
+            let token = load_api_token()?;
+            let rooms = get_rooms(DEFAULT_BASE_URL, &token)?;
+            let rooms = filter_rooms(rooms, args.name_query.as_deref(), args.room_type);
+            print_value(&serde_json::Value::Array(rooms), args.output.format)?;
+        }
         GetCommand::Room(args) => {
             let token = load_api_token()?;
             let room_id = resolve_get_room_id(&args)?;
             let room = get_room(DEFAULT_BASE_URL, &token, room_id)?;
             print_value(&room, args.output.format)?;
+        }
+        GetCommand::Messages(args) => {
+            let token = load_api_token()?;
+            let room_id = resolve_get_messages_room_id(&args)?;
+            let mut messages = get_room_messages(DEFAULT_BASE_URL, &token, room_id)?;
+            apply_messages_filters(&mut messages, &args)?;
+            print_value(&serde_json::Value::Array(messages), args.output.format)?;
         }
         GetCommand::Message(args) => {
             let token = load_api_token()?;
@@ -1598,6 +1696,190 @@ fn get_room_message_json(
 
 fn get_room(base_url: &str, token: &str, room_id: u64) -> Result<serde_json::Value> {
     get_api_json(base_url, token, &format!("/rooms/{room_id}"))
+}
+
+fn get_rooms(base_url: &str, token: &str) -> Result<Vec<serde_json::Value>> {
+    get_api_json(base_url, token, "/rooms")
+}
+
+fn get_room_messages(
+    base_url: &str,
+    token: &str,
+    room_id: u64,
+) -> Result<Vec<serde_json::Value>> {
+    // force=1: 既読/未読関係なく最新最大100件を取得
+    let value: serde_json::Value = get_api_json(
+        base_url,
+        token,
+        &format!("/rooms/{room_id}/messages?force=1"),
+    )?;
+    match value {
+        // メッセージが0件のとき API は null を返す
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Array(arr) => Ok(arr),
+        _ => bail!(tr("Unexpected response shape from /rooms/{room_id}/messages")),
+    }
+}
+
+fn filter_rooms(
+    rooms: Vec<serde_json::Value>,
+    name_query: Option<&str>,
+    room_type: Option<RoomType>,
+) -> Vec<serde_json::Value> {
+    let q_lower = name_query
+        .filter(|q| !q.is_empty())
+        .map(|q| q.to_lowercase());
+    let type_str = room_type.map(|t| t.as_str());
+
+    rooms
+        .into_iter()
+        .filter(|r| {
+            if let Some(ref q) = q_lower {
+                let name_match = r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|n| n.to_lowercase().contains(q))
+                    .unwrap_or(false);
+                if !name_match {
+                    return false;
+                }
+            }
+            if let Some(t) = type_str {
+                let type_match = r.get("type").and_then(|v| v.as_str()) == Some(t);
+                if !type_match {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
+fn apply_messages_filters(
+    messages: &mut Vec<serde_json::Value>,
+    args: &GetMessagesArgs,
+) -> Result<()> {
+    // 古い順に並べ替え
+    messages.sort_by_key(|m| m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0));
+
+    // since/until/today を解決
+    let (since_ts, until_ts) = resolve_messages_time_range(args)?;
+
+    if let Some(account_id) = args.account_id {
+        messages.retain(|m| {
+            m.get("account")
+                .and_then(|a| a.get("account_id"))
+                .and_then(|v| v.as_u64())
+                == Some(account_id)
+        });
+    }
+
+    if let Some(since) = since_ts {
+        messages.retain(|m| {
+            m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) >= since
+        });
+    }
+
+    if let Some(until) = until_ts {
+        messages.retain(|m| {
+            m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) <= until
+        });
+    }
+
+    if let Some(q) = args.query.as_deref() {
+        if !q.is_empty() {
+            messages.retain(|m| {
+                m.get("body")
+                    .and_then(|v| v.as_str())
+                    .map(|b| b.contains(q))
+                    .unwrap_or(false)
+            });
+        }
+    }
+
+    if let Some(limit) = args.limit {
+        if messages.len() > limit {
+            // 最新 N 件 = 末尾 N 件
+            let drop_count = messages.len() - limit;
+            messages.drain(0..drop_count);
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_messages_time_range(args: &GetMessagesArgs) -> Result<(Option<i64>, Option<i64>)> {
+    if args.today {
+        let jst = chrono::FixedOffset::east_opt(9 * 3600).expect("valid offset");
+        let today = chrono::Utc::now().with_timezone(&jst).date_naive();
+        let start = today
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time")
+            .and_local_timezone(jst)
+            .single()
+            .context(tr("Failed to resolve today's start in JST"))?;
+        let end = today
+            .and_hms_opt(23, 59, 59)
+            .expect("valid time")
+            .and_local_timezone(jst)
+            .single()
+            .context(tr("Failed to resolve today's end in JST"))?;
+        return Ok((Some(start.timestamp()), Some(end.timestamp())));
+    }
+
+    let since = args.since.as_deref().map(parse_datetime_arg).transpose()?;
+    let until = args.until.as_deref().map(parse_datetime_arg).transpose()?;
+    Ok((since, until))
+}
+
+fn parse_datetime_arg(input: &str) -> Result<i64> {
+    let trimmed = input.trim();
+
+    // Unix epoch (秒)
+    if let Ok(epoch) = trimmed.parse::<i64>() {
+        return Ok(epoch);
+    }
+
+    // RFC3339
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
+        return Ok(dt.timestamp());
+    }
+
+    // YYYY-MM-DD (JST 00:00 として解釈)
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
+        let jst = chrono::FixedOffset::east_opt(9 * 3600).expect("valid offset");
+        let dt = date
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time")
+            .and_local_timezone(jst)
+            .single()
+            .context(tr("Failed to resolve datetime in JST"))?;
+        return Ok(dt.timestamp());
+    }
+
+    bail!(trf(
+        "Failed to parse datetime: {value} (expected RFC3339, YYYY-MM-DD, or unix epoch seconds)",
+        &[("value", trimmed)],
+    ))
+}
+
+fn resolve_get_messages_room_id(args: &GetMessagesArgs) -> Result<u64> {
+    let chat_url = args
+        .chat_url
+        .as_deref()
+        .or(args.chat_url_arg.as_deref());
+    match (args.room_id, chat_url) {
+        (Some(id), _) => Ok(id),
+        (None, Some(url)) => {
+            let (room_id, _) = parse_chatwork_url_parts(url).ok_or_else(|| {
+                anyhow::anyhow!(tr("Failed to parse room_id from chat URL."))
+            })?;
+            Ok(room_id)
+        }
+        (None, None) => bail!(tr(
+            "Specify --room-id or pass a Chatwork room URL."
+        )),
+    }
 }
 
 fn get_me(base_url: &str, token: &str) -> Result<MeResponse> {
@@ -3129,7 +3411,7 @@ mod tests {
             err.to_string(),
             trf(
                 "Ambiguous subcommand prefix `{prefix}`: {matches}",
-                &[("prefix", "m"), ("matches", "me, my-status, message")],
+                &[("prefix", "m"), ("matches", "me, my-status, messages, message")],
             )
         );
     }
