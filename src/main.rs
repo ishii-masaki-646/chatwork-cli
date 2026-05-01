@@ -1702,11 +1702,7 @@ fn get_rooms(base_url: &str, token: &str) -> Result<Vec<serde_json::Value>> {
     get_api_json(base_url, token, "/rooms")
 }
 
-fn get_room_messages(
-    base_url: &str,
-    token: &str,
-    room_id: u64,
-) -> Result<Vec<serde_json::Value>> {
+fn get_room_messages(base_url: &str, token: &str, room_id: u64) -> Result<Vec<serde_json::Value>> {
     // force=1: 既読/未読関係なく最新最大100件を取得
     let value: serde_json::Value = get_api_json(
         base_url,
@@ -1717,7 +1713,9 @@ fn get_room_messages(
         // メッセージが0件のとき API は null を返す
         serde_json::Value::Null => Ok(Vec::new()),
         serde_json::Value::Array(arr) => Ok(arr),
-        _ => bail!(tr("Unexpected response shape from /rooms/{room_id}/messages")),
+        _ => bail!(tr(
+            "Unexpected response shape from /rooms/{room_id}/messages"
+        )),
     }
 }
 
@@ -1775,15 +1773,11 @@ fn apply_messages_filters(
     }
 
     if let Some(since) = since_ts {
-        messages.retain(|m| {
-            m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) >= since
-        });
+        messages.retain(|m| m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) >= since);
     }
 
     if let Some(until) = until_ts {
-        messages.retain(|m| {
-            m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) <= until
-        });
+        messages.retain(|m| m.get("send_time").and_then(|v| v.as_i64()).unwrap_or(0) <= until);
     }
 
     if let Some(q) = args.query.as_deref() {
@@ -1864,21 +1858,15 @@ fn parse_datetime_arg(input: &str) -> Result<i64> {
 }
 
 fn resolve_get_messages_room_id(args: &GetMessagesArgs) -> Result<u64> {
-    let chat_url = args
-        .chat_url
-        .as_deref()
-        .or(args.chat_url_arg.as_deref());
+    let chat_url = args.chat_url.as_deref().or(args.chat_url_arg.as_deref());
     match (args.room_id, chat_url) {
         (Some(id), _) => Ok(id),
         (None, Some(url)) => {
-            let (room_id, _) = parse_chatwork_url_parts(url).ok_or_else(|| {
-                anyhow::anyhow!(tr("Failed to parse room_id from chat URL."))
-            })?;
+            let (room_id, _) = parse_chatwork_url_parts(url)
+                .ok_or_else(|| anyhow::anyhow!(tr("Failed to parse room_id from chat URL.")))?;
             Ok(room_id)
         }
-        (None, None) => bail!(tr(
-            "Specify --room-id or pass a Chatwork room URL."
-        )),
+        (None, None) => bail!(tr("Specify --room-id or pass a Chatwork room URL.")),
     }
 }
 
@@ -3411,7 +3399,10 @@ mod tests {
             err.to_string(),
             trf(
                 "Ambiguous subcommand prefix `{prefix}`: {matches}",
-                &[("prefix", "m"), ("matches", "me, my-status, messages, message")],
+                &[
+                    ("prefix", "m"),
+                    ("matches", "me, my-status, messages, message")
+                ],
             )
         );
     }
