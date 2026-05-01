@@ -12,6 +12,7 @@ A small Chatwork CLI built with `clap`.
 - Send rendered template messages to Chatwork
 - Send ad-hoc messages without a template
 - Fetch your account, status, contacts, rooms, and messages
+- Edit and delete existing messages
 - Download Chatwork files from IDs or message URLs
 
 ## Requirements
@@ -150,6 +151,25 @@ If you pass a Chatwork URL directly to `get` or through `--chat-url`, it is rout
 - `#!rid<room_id>-<message_id>` -> `get message`
 
 `get room` and `get message` accept both `--chat-url` and positional `[CHAT_URL]`, but not at the same time.
+
+### Editing and deleting messages
+
+```bash
+cargo run -- update message --room-id 12345678 --message-id 1234567890123456789 -m '差し替え後の本文'
+cargo run -- update message 'https://www.chatwork.com/#!rid12345678-1234567890123456789' --message-file new-body.md
+echo '本文をパイプで渡してもいい' | cargo run -- update message --room-id 12345678 --message-id 1234567890123456789
+
+cargo run -- delete message --room-id 12345678 --message-id 1234567890123456789
+cargo run -- delete message 'https://www.chatwork.com/#!rid12345678-1234567890123456789' --yes
+```
+
+`update message` is `PUT /rooms/{room_id}/messages/{message_id}`. The new body
+is taken from `-m/--message`, `--message-file`, or piped stdin in that order of
+precedence. `--dry-run` shows what would be sent without calling the API.
+
+`delete message` is `DELETE /rooms/{room_id}/messages/{message_id}`. By default
+it asks for confirmation; pass `-y/--yes` to skip the prompt (e.g. in scripts).
+`--dry-run` previews the target without deleting.
 
 ### Download files
 
