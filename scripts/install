@@ -34,4 +34,18 @@ done
 
 cargo install --path "${PROJECT_ROOT}" --root "${ROOT}" --force
 
-printf 'installed: %s\n' "${ROOT}/bin/chatwork"
+INSTALLED_BIN="${ROOT}/bin/chatwork"
+printf 'installed: %s\n' "${INSTALLED_BIN}"
+
+# シェル補完を自動で配置する。対象ディレクトリが存在する場合のみ。
+ZSH_FUNC_DIR="${HOME}/.zfunc"
+if [ -d "${ZSH_FUNC_DIR}" ]; then
+  "${INSTALLED_BIN}" completion zsh > "${ZSH_FUNC_DIR}/_chatwork"
+  printf 'updated zsh completion: %s\n' "${ZSH_FUNC_DIR}/_chatwork"
+fi
+
+BASH_COMP_DIR="${HOME}/.local/share/bash-completion/completions"
+if [ -d "${BASH_COMP_DIR}" ]; then
+  "${INSTALLED_BIN}" completion bash > "${BASH_COMP_DIR}/chatwork"
+  printf 'updated bash completion: %s\n' "${BASH_COMP_DIR}/chatwork"
+fi

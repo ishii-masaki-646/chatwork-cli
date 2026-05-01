@@ -58,6 +58,8 @@ mkdir -p ~/.zfunc
 
 For `zsh`, add `fpath=(~/.zfunc $fpath)` and `autoload -Uz compinit && compinit` to `~/.zshrc` if needed.
 
+`./scripts/install` automatically refreshes the completion files in `~/.zfunc/_chatwork` and `~/.local/share/bash-completion/completions/chatwork` when those directories exist, so you can re-run install to keep completions up to date.
+
 ## i18n
 
 Runtime messages are managed with gettext-style `msgid`s. Translation catalogs live under `locale/<lang>/LC_MESSAGES/chatwork-cli.po`.
@@ -101,9 +103,15 @@ cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
 cargo run -- get contacts --aids=1234567,7654321 --format=json-minify
 cargo run -- get contacts --name-query=ishi --format=json-minify
+cargo run -- get rooms
+cargo run -- get rooms --type=group --name-query=kintai --format=json-minify
+cargo run -- get rooms --type=my
 cargo run -- get room --room-id 12345678
 cargo run -- get room 'https://www.chatwork.com/#!rid12345678'
 cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get messages --room-id 12345678 --today
+cargo run -- get messages --room-id 12345678 --since=2026-05-01 --until=2026-05-02
+cargo run -- get messages --room-id 12345678 --query=kintai --account-id=1234567 --format=json-minify
 cargo run -- get message --room-id 12345678 --message-id 1234567890123456789
 cargo run -- get message 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
 cargo run -- get message --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
@@ -113,7 +121,7 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678'
 cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
 ```
 
-`get me`, `get status`, `get contacts`, `get room`, and `get message` output pretty JSON by default. Use `--format=json-minify` for one-line JSON or `--format=plain` for a compact text view.
+`get me`, `get status`, `get contacts`, `get rooms`, `get room`, `get messages`, and `get message` output pretty JSON by default. Use `--format=json-minify` for one-line JSON or `--format=plain` for a compact text view.
 
 `get my-status` is an alias for `get status`.
 
@@ -122,6 +130,19 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678-123456789012
 - `--aids=1234567,7654321`: filter by exact `account_id`
 - `--name-query=ishi`: filter by partial `name`
 - `--aids` and `--name-query` can be combined
+
+`get rooms` supports these filters:
+
+- `--name-query=kintai`: filter rooms by partial `name`
+- `--type=group|my|direct`: filter by room type
+
+`get messages` fetches up to 100 messages per call (it uses Chatwork's `/rooms/{room_id}/messages?force=1`). It supports these filters:
+
+- `--account-id=1234567`: filter by sender's `account_id`
+- `--since=...` / `--until=...`: filter by datetime. Accepts RFC3339, `YYYY-MM-DD` (treated as JST 0:00), or unix epoch seconds.
+- `--today`: shortcut for "today 0:00 to 23:59:59 in JST". Cannot be combined with `--since` / `--until`.
+- `--query=text`: filter by partial body match
+- `--limit=10`: keep only the latest N messages
 
 If you pass a Chatwork URL directly to `get` or through `--chat-url`, it is routed automatically:
 

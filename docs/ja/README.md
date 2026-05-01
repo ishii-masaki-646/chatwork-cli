@@ -57,6 +57,8 @@ mkdir -p ~/.zfunc
 
 `zsh` で利用する場合は、必要に応じて `~/.zshrc` に `fpath=(~/.zfunc $fpath)` および `autoload -Uz compinit && compinit` を追加してください。
 
+`./scripts/install` を実行すると、`~/.zfunc/_chatwork` と `~/.local/share/bash-completion/completions/chatwork` のうち存在するディレクトリには補完ファイルを自動で再配置するので、`install` を打ち直すだけで補完を最新化できます。
+
 ## i18n
 
 CLI の実行時メッセージは gettext 風の `msgid` ベースで管理しています。翻訳カタログは `locale/<lang>/LC_MESSAGES/chatwork-cli.po` に配置します。既定では日本語カタログを内蔵しており、`CHATWORK_LOCALE` や `LANG` でロケールを切り替えられます。
@@ -98,9 +100,15 @@ cargo run -- get my-status --format=plain
 cargo run -- get contacts --format=json-minify
 cargo run -- get contacts --aids=1234567,7654321 --format=json-minify
 cargo run -- get contacts --name-query=石 --format=json-minify
+cargo run -- get rooms
+cargo run -- get rooms --type=group --name-query=勤怠 --format=json-minify
+cargo run -- get rooms --type=my
 cargo run -- get room --room-id 12345678
 cargo run -- get room 'https://www.chatwork.com/#!rid12345678'
 cargo run -- get room --chat-url 'https://www.chatwork.com/#!rid12345678'
+cargo run -- get messages --room-id 12345678 --today
+cargo run -- get messages --room-id 12345678 --since=2026-05-01 --until=2026-05-02
+cargo run -- get messages --room-id 12345678 --query=勤怠 --account-id=1234567 --format=json-minify
 cargo run -- get message --room-id 12345678 --message-id 1234567890123456789
 cargo run -- get message 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
 cargo run -- get message --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
@@ -110,7 +118,7 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678'
 cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678-1234567890123456789'
 ```
 
-`get me` / `get status` / `get contacts` / `get room` / `get message` は、既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。
+`get me` / `get status` / `get contacts` / `get rooms` / `get room` / `get messages` / `get message` は、既定で整形済み JSON を出力します。`--format=json-minify` で 1 行 JSON、`--format=plain` で簡易表示に切り替えられます。
 
 `get my-status` は `get status` の互換名です。
 
@@ -119,6 +127,19 @@ cargo run -- get --chat-url 'https://www.chatwork.com/#!rid12345678-123456789012
 - `--aids=1234567,7654321`: 指定した `account_id` のコンタクトだけ返します。
 - `--name-query=石`: `name` を部分一致で絞り込みます。
 - `--aids` と `--name-query` は併用できます。
+
+`get rooms` では、次の絞り込みが使えます。
+
+- `--name-query=勤怠`: ルーム `name` を部分一致で絞り込みます。
+- `--type=group|my|direct`: ルーム種別で絞り込みます。
+
+`get messages` ではルーム内のメッセージを最大 100 件まとめて取得できます (Chatwork API の `/rooms/{room_id}/messages?force=1` を利用)。次の絞り込みが使えます。
+
+- `--account-id=1234567`: 投稿者の `account_id` で絞り込みます。
+- `--since=...` / `--until=...`: 日時で絞り込みます。値は RFC3339 / `YYYY-MM-DD` (JST 0:00 として解釈) / unix epoch 秒のいずれかです。
+- `--today`: 当日 0:00〜23:59:59 (JST) のメッセージに絞ります。`--since` / `--until` とは併用できません。
+- `--query=テキスト`: 本文の部分一致で絞り込みます。
+- `--limit=10`: 最新 N 件のみ取得します。
 
 Chatwork URL を `get` の直後または `--chat-url` で渡した場合は、自動で次のように振り分けます。
 
