@@ -1476,25 +1476,6 @@ fn handle_upload_command(command: UploadCommand) -> Result<()> {
                 );
             }
 
-            let filesize = fs::metadata(path)
-                .with_context(|| {
-                    trf(
-                        "Failed to read file metadata: {path}",
-                        &[("path", &path.display().to_string())],
-                    )
-                })?
-                .len();
-
-            if filesize > 5 * 1024 * 1024 {
-                bail!(
-                    "{}",
-                    trf(
-                        "File size exceeds the 5 MB limit: {path}",
-                        &[("path", &path.display().to_string())],
-                    )
-                );
-            }
-
             let result = upload_file(
                 DEFAULT_BASE_URL,
                 &token,
