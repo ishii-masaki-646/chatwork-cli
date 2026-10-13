@@ -412,6 +412,10 @@ struct ShowArgs {
     /// 差し込み変数。例: --var name=あい
     #[arg(long = "var", value_name = "KEY=VALUE")]
     vars: Vec<String>,
+
+    /// 差し込み変数を TOML ファイルから読む。--var が優先される
+    #[arg(long = "vars-from-file", value_name = "PATH")]
+    vars_from_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -430,6 +434,10 @@ struct SendArgs {
     /// 差し込み変数。例: --var name=あい
     #[arg(long = "var", value_name = "KEY=VALUE")]
     vars: Vec<String>,
+
+    /// 差し込み変数を TOML ファイルから読む。--var が優先される
+    #[arg(long = "vars-from-file", value_name = "PATH")]
+    vars_from_file: Option<PathBuf>,
 
     /// 自分を未読にする
     #[arg(long)]
@@ -1030,6 +1038,7 @@ Arguments:
 Options:
       --config <PATH>    設定ファイルのパス
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
+      --vars-from-file <PATH>  差し込み変数を TOML ファイルから読む。--var が優先される
   -h, --help             ヘルプを表示する"#
         }
         UsageContext::Send => {
@@ -1046,6 +1055,7 @@ Options:
       --room-id <ROOM_ID>  送信先ルーム ID。テンプレート送信時は省略するとテンプレート設定か default_room_id を使う
   -m, --message <MESSAGE>  テンプレートを使わずに送るメッセージ本文
       --var <KEY=VALUE>  差し込み変数。例: --var name=あい
+      --vars-from-file <PATH>  差し込み変数を TOML ファイルから読む。--var が優先される
       --self-unread      自分を未読にする
       --dry-run          実際には送らず本文だけ表示する
   -h, --help             ヘルプを表示する"#
@@ -1217,6 +1227,7 @@ fn long_option_takes_value(name: &str) -> bool {
             | "message"
             | "file"
             | "var"
+            | "vars-from-file"
     )
 }
 
@@ -1646,7 +1657,11 @@ fn handle_template_command(command: TemplateCommand, config: &Config) -> Result<
             let template = get_template(config, &args.name, UsageContext::TemplateShow)?;
             let body =
                 resolve_template_body(config, &args.name, template, UsageContext::TemplateShow)?;
-            let vars = parse_vars(&args.vars, UsageContext::TemplateShow)?;
+            let vars = resolve_vars(
+                args.vars_from_file.as_deref(),
+                &args.vars,
+                UsageContext::TemplateShow,
+            )?;
             let rendered = render_template(&body, &vars, UsageContext::TemplateShow)?;
             println!("{rendered}");
         }
@@ -1699,16 +1714,20 @@ fn resolve_send_request(
             })?;
             let template = get_template(config, name, UsageContext::Send)?;
             let body = resolve_template_body(config, name, template, UsageContext::Send)?;
-            let vars = parse_vars(&args.vars, UsageContext::Send)?;
+            let vars = resolve_vars(
+                args.vars_from_file.as_deref(),
+                &args.vars,
+                UsageContext::Send,
+            )?;
             let room_id = resolve_template_send_room_id(args, config, template)?;
             let rendered = render_template(&body, &vars, UsageContext::Send)?;
             Ok((room_id, rendered, config.base_url.clone()))
         }
         (None, Some(message)) => {
-            if !args.vars.is_empty() {
+            if !args.vars.is_empty() || args.vars_from_file.is_some() {
                 return Err(usage_error(
                     UsageContext::Send,
-                    tr("Do not use --var together with --message."),
+                    tr("Do not use --var or --vars-from-file together with --message."),
                 ));
             }
 
@@ -2801,6 +2820,69 @@ fn parse_vars(items: &[String], context: UsageContext) -> Result<BTreeMap<String
     Ok(vars)
 }
 
+fn resolve_vars(
+    file: Option<&Path>,
+    items: &[String],
+    context: UsageContext,
+) -> Result<BTreeMap<String, String>> {
+    let mut vars = match file {
+        Some(path) => load_vars_file(path, context)?,
+        None => BTreeMap::new(),
+    };
+    vars.extend(parse_vars(items, context)?);
+    Ok(vars)
+}
+
+fn load_vars_file(path: &Path, context: UsageContext) -> Result<BTreeMap<String, String>> {
+    let path = expand_home(path);
+    let display = path.display().to_string();
+    let content = fs::read_to_string(&path).map_err(|err| {
+        usage_error(
+            context,
+            trf(
+                "Failed to read the variables file `{path}`: {error}",
+                &[("path", &display), ("error", &err.to_string())],
+            ),
+        )
+    })?;
+
+    let table: toml::Table = toml::from_str(&content).map_err(|err| {
+        usage_error(
+            context,
+            trf(
+                "Invalid variables file `{path}`: {error}",
+                &[("path", &display), ("error", &err.to_string())],
+            ),
+        )
+    })?;
+
+    let mut vars = BTreeMap::new();
+    for (key, value) in &table {
+        let value = value.as_str().ok_or_else(|| {
+            usage_error(
+                context,
+                trf(
+                    "Invalid variables file `{path}`: the value of `{key}` must be a string.",
+                    &[("path", &display), ("key", key)],
+                ),
+            )
+        })?;
+        vars.insert(key.trim().to_string(), value.to_string());
+    }
+
+    if vars.contains_key("") {
+        return Err(usage_error(
+            context,
+            trf(
+                "Invalid variables file `{path}`: variable names cannot be empty.",
+                &[("path", &display)],
+            ),
+        ));
+    }
+
+    Ok(vars)
+}
+
 fn resolve_template_body_path(config: &Config, body_file: &str) -> PathBuf {
     let path = expand_home(Path::new(body_file));
 
@@ -3204,6 +3286,55 @@ mod tests {
             err.to_string(),
             trf("Variable `{key}` is not set.", &[("key", "name")]),
         );
+    }
+
+    #[test]
+    fn vars_file_reads_toml_and_var_overrides() {
+        let dir = env::temp_dir().join(format!("chatwork-cli-vars-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v.toml");
+        fs::write(&path, "name = \"くー\"\nlog = \"\"\"\nx\ny\n\"\"\"\n").unwrap();
+
+        let vars = resolve_vars(Some(&path), &[], UsageContext::Send).unwrap();
+        assert_eq!(vars["name"], "くー");
+        assert_eq!(vars["log"], "x\ny\n");
+
+        let vars = resolve_vars(
+            Some(&path),
+            &["name=上書き".to_string()],
+            UsageContext::Send,
+        )
+        .unwrap();
+        assert_eq!(vars["name"], "上書き");
+        assert_eq!(vars["log"], "x\ny\n");
+    }
+
+    #[test]
+    fn vars_file_accepts_values_over_128kb() {
+        let dir = env::temp_dir().join(format!("chatwork-cli-vars-big-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.toml");
+        let big = "a".repeat(200 * 1024);
+        fs::write(&path, format!("log = \"{big}\"\n")).unwrap();
+
+        let vars = resolve_vars(Some(&path), &[], UsageContext::Send).unwrap();
+        assert_eq!(vars["log"].len(), 200 * 1024);
+    }
+
+    #[test]
+    fn vars_file_rejects_bad_input() {
+        let dir = env::temp_dir().join(format!("chatwork-cli-vars-bad-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert!(load_vars_file(&dir.join("missing.toml"), UsageContext::Send).is_err());
+
+        let broken = dir.join("broken.toml");
+        fs::write(&broken, "name = ").unwrap();
+        assert!(load_vars_file(&broken, UsageContext::Send).is_err());
+
+        let non_string = dir.join("num.toml");
+        fs::write(&non_string, "n = 1\n").unwrap();
+        let err = load_vars_file(&non_string, UsageContext::Send).unwrap_err();
+        assert!(err.to_string().contains("`n`"));
     }
 
     #[test]
@@ -4192,6 +4323,7 @@ body_file = "invalid.txt"
                 room_id: None,
                 message: None,
                 vars: Vec::new(),
+                vars_from_file: None,
                 self_unread: false,
                 dry_run: false,
             },
@@ -4221,6 +4353,7 @@ body_file = "invalid.txt"
                 room_id: None,
                 message: Some("任意の本文".to_string()),
                 vars: Vec::new(),
+                vars_from_file: None,
                 self_unread: false,
                 dry_run: false,
             },
@@ -4241,6 +4374,7 @@ body_file = "invalid.txt"
                 room_id: Some("123456".to_string()),
                 message: Some("任意の本文".to_string()),
                 vars: vec!["name=ai".to_string()],
+                vars_from_file: None,
                 self_unread: false,
                 dry_run: false,
             },
@@ -4250,7 +4384,7 @@ body_file = "invalid.txt"
 
         assert_eq!(
             err.to_string(),
-            tr("Do not use --var together with --message.")
+            tr("Do not use --var or --vars-from-file together with --message.")
         );
     }
 

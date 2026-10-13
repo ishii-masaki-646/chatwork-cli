@@ -193,7 +193,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room-id|--room|--message|--var|--aids|--name-query)
+            --room-id|--room|--message|--var|--vars-from-file|--aids|--name-query)
                 if (( i + 1 < COMP_CWORD )); then
                     ((i++))
                 fi
@@ -227,7 +227,7 @@ _chatwork() {
                 COMPREPLY=( "${values[@]/#/${opt}=}" )
                 return 0
                 ;;
-            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
+            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--vars-from-file|--aids|--name-query)
                 return 0
                 ;;
         esac
@@ -249,13 +249,13 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--account-id|--room|--message|--var)
+        --room-id|--file-id|--message-id|--account-id|--room|--message|--var|--vars-from-file)
             return 0
             ;;
     esac
 
     if [[ "${mode}" == "send" ]]; then
-        local opts="--room-id --room --message --var --self-unread --dry-run --config --help"
+        local opts="--room-id --room --message --var --vars-from-file --self-unread --dry-run --config --help"
         if [[ ${positional_seen} -eq 0 && "${cur}" != -* ]]; then
             local cmd=(chatwork)
             local templates combined
@@ -332,7 +332,7 @@ _chatwork() {
     fi
 
     if [[ "${mode}" == "template" && "${template_subcmd}" == "show" ]]; then
-        local opts="--var --config --help"
+        local opts="--var --vars-from-file --config --help"
         if [[ ${positional_seen} -eq 0 && "${cur}" != -* ]]; then
             local cmd=(chatwork)
             local templates combined
@@ -593,7 +593,7 @@ _chatwork() {
             completion)
                 mode="completion"
                 ;;
-            --room-id|--room|--message|--var|--aids|--name-query)
+            --room-id|--room|--message|--var|--vars-from-file|--aids|--name-query)
                 if (( i + 1 < CURRENT )); then
                     ((i++))
                 fi
@@ -630,7 +630,7 @@ _chatwork() {
                 _chatwork_add_described "${formats[@]}"
                 return 0
                 ;;
-            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
+            --chat-url|--room-id|--file-id|--message-id|--account-id|--room|--message|--var|--vars-from-file|--aids|--name-query)
                 return 0
                 ;;
         esac
@@ -658,7 +658,7 @@ _chatwork() {
         --chat-url)
             return 0
             ;;
-        --room-id|--file-id|--message-id|--account-id|--room|--message|--var|--aids|--name-query)
+        --room-id|--file-id|--message-id|--account-id|--room|--message|--var|--vars-from-file|--aids|--name-query)
             return 0
             ;;
     esac
@@ -845,6 +845,7 @@ _chatwork() {
             $'--room\t送信先ルーム ID を指定する（互換 alias）'
             $'--message\tテンプレートを使わずに送るメッセージ本文を指定する'
             $'--var\t差し込み変数を指定する'
+            $'--vars-from-file\tTOML ファイルから差し込み変数を読む'
             $'--self-unread\t自分を未読にする'
             $'--dry-run\t送信せず本文のみ表示する'
             $'--config\t設定ファイルのパスを指定する'
@@ -869,6 +870,7 @@ _chatwork() {
         local -a opts lines cmd template_specs
         opts=(
             $'--var\t差し込み変数を指定する'
+            $'--vars-from-file\tTOML ファイルから差し込み変数を読む'
             $'--config\t設定ファイルのパスを指定する'
             $'--help\tヘルプを表示する'
         )

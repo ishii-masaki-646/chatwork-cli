@@ -30,8 +30,20 @@ msgstr "テンプレート名または --message を指定してください。"
 msgid "A config file is required when using a template."
 msgstr "テンプレートを使う場合は設定ファイルが必要です。"
 
-msgid "Do not use --var together with --message."
-msgstr "--message と --var は同時に指定できません。"
+msgid "Do not use --var or --vars-from-file together with --message."
+msgstr "--message と --var / --vars-from-file は同時に指定できません。"
+
+msgid "Failed to read the variables file `{path}`: {error}"
+msgstr "変数ファイル `{path}` を読み込めませんでした: {error}"
+
+msgid "Invalid variables file `{path}`: {error}"
+msgstr "変数ファイル `{path}` が不正です: {error}"
+
+msgid "Invalid variables file `{path}`: the value of `{key}` must be a string."
+msgstr "変数ファイル `{path}` が不正です: `{key}` の値は文字列にしてください。"
+
+msgid "Invalid variables file `{path}`: variable names cannot be empty."
+msgstr "変数ファイル `{path}` が不正です: 変数名を空にはできません。"
 
 msgid "Specify one of --room-id, template room_id, or default_room_id."
 msgstr "--room-id、テンプレートの room_id、default_room_id のいずれかを指定してください。"
