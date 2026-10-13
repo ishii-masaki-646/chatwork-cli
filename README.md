@@ -222,7 +222,25 @@ cargo run -- send --message 'Free-form message body' --room-id 12345678 --dry-ru
 
 `send` accepts either a template name or `--message`, but not both.
 
-When using `--message`, `--room-id` takes priority. If it is omitted, `default_room_id` is used. `--var` is available only for template sends.
+When using `--message`, `--room-id` takes priority. If it is omitted, `default_room_id` is used. `--var` and `--vars-from-file` are available only for template sends.
+
+#### Passing variables from a file
+
+A long value (for example a log excerpt) can exceed the OS limit on a single command-line argument (about 128 KB on Linux, `Argument list too long`). `--vars-from-file <PATH>` (on both `send` and `template show`) reads variables from a TOML file instead. Every value must be a string.
+
+```toml
+topic = "quote"
+log = """
+line 1
+line 2
+"""
+```
+
+```bash
+cargo run -- send follow_up --config ./config/config.example.toml --room-id 12345678 --vars-from-file ./vars.toml --var topic=override --dry-run
+```
+
+It can be combined with `--var`; `--var` takes priority over the file. A missing file, invalid syntax, or a non-string value is reported as an error.
 
 For template sends, the destination room is resolved in this order:
 

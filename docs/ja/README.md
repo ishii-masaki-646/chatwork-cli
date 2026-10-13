@@ -212,7 +212,25 @@ cargo run -- send --message '任意の本文です' --room-id 12345678 --dry-run
 
 `send` はテンプレート名か `--message` のどちらか一方だけを指定します。
 
-`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` はテンプレート送信時だけ利用できます。
+`--message` を使う場合は、`--room-id` を優先し、未指定なら `default_room_id` を使います。`--var` と `--vars-from-file` はテンプレート送信時だけ利用できます。
+
+#### 変数をファイルから渡す
+
+ログの一覧のような長い値は、OS の 1 引数あたりの上限（Linux では約 128KB）を超えて `Argument list too long` になることがあります。`--vars-from-file <PATH>`（`send` と `template show` で利用可）を使うと、TOML ファイルから変数を読めます。値はすべて文字列にしてください。
+
+```toml
+topic = "見積"
+log = """
+1行目
+2行目
+"""
+```
+
+```bash
+cargo run -- send follow_up --config ./config/config.example.toml --room-id 12345678 --vars-from-file ./vars.toml --var topic=上書き --dry-run
+```
+
+`--var` と併用でき、`--var` がファイルの値より優先されます。ファイルが無い・形式が不正・値が文字列でない場合はエラーになります。
 
 テンプレート送信時の送信先ルームは、次の優先順位で決定されます。
 
