@@ -645,6 +645,8 @@ impl CompletionShell {
 }
 
 fn main() -> Result<()> {
+    // reqwest は rustls-no-provider で使うため、暗号プロバイダ (ring) を先に登録する
+    let _ = rustls::crypto::ring::default_provider().install_default();
     load_dotenv_files()?;
     let args = match normalize_cli_args(env::args_os().collect()) {
         Ok(args) => args,
